@@ -1,0 +1,312 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000010000000000000001 /* OnlyNotesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000001; };
+		A10000010000000000000002 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000002; };
+		A10000010000000000000003 /* Meeting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000003; };
+		A10000010000000000000004 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000004; };
+		A10000010000000000000005 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000005; };
+		A10000010000000000000006 /* MeetingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000006; };
+		A10000010000000000000007 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000007; };
+		A10000010000000000000008 /* MeetingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000008; };
+		A10000010000000000000009 /* MeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000009; };
+		A10000010000000000000010 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000010; };
+		A10000010000000000000011 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000011; };
+		A10000010000000000000012 /* TranscriptSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000014; };
+		A10000010000000000000013 /* GoogleSpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000015; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000010000000000000001 /* OnlyNotesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlyNotesApp.swift; sourceTree = "<group>"; };
+		A20000010000000000000002 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		A20000010000000000000003 /* Meeting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Meeting.swift; sourceTree = "<group>"; };
+		A20000010000000000000004 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
+		A20000010000000000000005 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
+		A20000010000000000000006 /* MeetingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingStore.swift; sourceTree = "<group>"; };
+		A20000010000000000000007 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A20000010000000000000008 /* MeetingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingListView.swift; sourceTree = "<group>"; };
+		A20000010000000000000009 /* MeetingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingDetailView.swift; sourceTree = "<group>"; };
+		A20000010000000000000010 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		A20000010000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A20000010000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000010000000000000014 /* TranscriptSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSegment.swift; sourceTree = "<group>"; };
+		A20000010000000000000015 /* GoogleSpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSpeechService.swift; sourceTree = "<group>"; };
+		A20000010000000000000013 /* OnlyNotes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OnlyNotes.entitlements; sourceTree = "<group>"; };
+		A30000010000000000000001 /* OnlyNotes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnlyNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A40000010000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A50000010000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A50000010000000000000002 /* OnlyNotes */,
+				A50000010000000000000006 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A50000010000000000000002 /* OnlyNotes */ = {
+			isa = PBXGroup;
+			children = (
+				A20000010000000000000001 /* OnlyNotesApp.swift */,
+				A20000010000000000000002 /* AppState.swift */,
+				A20000010000000000000012 /* Info.plist */,
+				A20000010000000000000013 /* OnlyNotes.entitlements */,
+				A50000010000000000000003 /* Models */,
+				A50000010000000000000004 /* Services */,
+				A50000010000000000000005 /* Views */,
+			);
+			path = OnlyNotes;
+			sourceTree = "<group>";
+		};
+		A50000010000000000000003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A20000010000000000000003 /* Meeting.swift */,
+				A20000010000000000000014 /* TranscriptSegment.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A50000010000000000000004 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A20000010000000000000004 /* AudioRecorder.swift */,
+				A20000010000000000000005 /* OpenAIService.swift */,
+				A20000010000000000000006 /* MeetingStore.swift */,
+				A20000010000000000000015 /* GoogleSpeechService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A50000010000000000000005 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A20000010000000000000007 /* ContentView.swift */,
+				A20000010000000000000008 /* MeetingListView.swift */,
+				A20000010000000000000009 /* MeetingDetailView.swift */,
+				A20000010000000000000010 /* MenuBarView.swift */,
+				A20000010000000000000011 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A50000010000000000000006 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A30000010000000000000001 /* OnlyNotes.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A60000010000000000000001 /* OnlyNotes */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A80000010000000000000003 /* Build configuration list for PBXNativeTarget "OnlyNotes" */;
+			buildPhases = (
+				A70000010000000000000001 /* Sources */,
+				A40000010000000000000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OnlyNotes;
+			productName = OnlyNotes;
+			productReference = A30000010000000000000001 /* OnlyNotes.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A90000010000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = A80000010000000000000001 /* Build configuration list for PBXProject "OnlyNotes" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A50000010000000000000001;
+			productRefGroup = A50000010000000000000006 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A60000010000000000000001 /* OnlyNotes */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A70000010000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000010000000000000001 /* OnlyNotesApp.swift in Sources */,
+				A10000010000000000000002 /* AppState.swift in Sources */,
+				A10000010000000000000003 /* Meeting.swift in Sources */,
+				A10000010000000000000004 /* AudioRecorder.swift in Sources */,
+				A10000010000000000000005 /* OpenAIService.swift in Sources */,
+				A10000010000000000000006 /* MeetingStore.swift in Sources */,
+				A10000010000000000000007 /* ContentView.swift in Sources */,
+				A10000010000000000000008 /* MeetingListView.swift in Sources */,
+				A10000010000000000000009 /* MeetingDetailView.swift in Sources */,
+				A10000010000000000000010 /* MenuBarView.swift in Sources */,
+				A10000010000000000000011 /* SettingsView.swift in Sources */,
+				A10000010000000000000012 /* TranscriptSegment.swift in Sources */,
+				A10000010000000000000013 /* GoogleSpeechService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A80000010000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A80000010000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		A80000010000000000000021 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = OnlyNotes/OnlyNotes.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OnlyNotes/Info.plist;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OnlyNotes needs microphone access to record meeting audio.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.onlynotes.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A80000010000000000000022 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = OnlyNotes/OnlyNotes.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OnlyNotes/Info.plist;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OnlyNotes needs microphone access to record meeting audio.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.onlynotes.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A80000010000000000000001 /* Build configuration list for PBXProject "OnlyNotes" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80000010000000000000011 /* Debug */,
+				A80000010000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A80000010000000000000003 /* Build configuration list for PBXNativeTarget "OnlyNotes" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80000010000000000000021 /* Debug */,
+				A80000010000000000000022 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = A90000010000000000000001 /* Project object */;
+}
