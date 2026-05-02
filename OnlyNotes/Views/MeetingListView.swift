@@ -11,6 +11,12 @@ struct MeetingListView: View {
                 recordButton
             }
 
+            if appState.recorder.isRecording {
+                Section {
+                    liveNotepadView
+                }
+            }
+
             if appState.processingError != nil {
                 Section {
                     Button {
@@ -84,6 +90,41 @@ struct MeetingListView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private var liveNotepadView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Recent notes preview (last 3, newest first)
+            ForEach(appState.liveNotes.suffix(3).reversed()) { note in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(note.formattedTimestamp)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 36, alignment: .leading)
+                    Text(note.text)
+                        .font(.caption)
+                        .lineLimit(2)
+                }
+            }
+
+            // Note entry
+            HStack(spacing: 4) {
+                TextField("Note...", text: $appState.liveNoteDraft)
+                    .font(.caption)
+                    .textFieldStyle(.plain)
+                    .onSubmit { appState.addLiveNote() }
+                Button(action: { appState.addLiveNote() }) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+                .disabled(appState.liveNoteDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(6)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+        }
+        .padding(.vertical, 4)
     }
 
     private func formatTime(_ time: TimeInterval) -> String {

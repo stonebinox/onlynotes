@@ -1,5 +1,24 @@
 import Foundation
 
+struct MeetingNote: Identifiable, Codable, Hashable {
+    let id: UUID
+    let timestampOffset: TimeInterval  // seconds from recording start
+    var text: String
+
+    init(id: UUID = UUID(), timestampOffset: TimeInterval, text: String) {
+        self.id = id
+        self.timestampOffset = timestampOffset
+        self.text = text
+    }
+
+    /// Formatted as "mm:ss"
+    var formattedTimestamp: String {
+        let m = Int(timestampOffset) / 60
+        let s = Int(timestampOffset) % 60
+        return String(format: "%d:%02d", m, s)
+    }
+}
+
 struct Meeting: Identifiable, Codable, Hashable {
     let id: UUID
     var title: String
@@ -11,6 +30,7 @@ struct Meeting: Identifiable, Codable, Hashable {
     var actionItems: [String]
     var chatMessages: [ChatMessage]
     var audioFilePath: String?
+    var notes: [MeetingNote]
 
     // Flat transcript for display/AI, resolving speaker names
     func transcript(resolvingNames: Bool = true) -> String {
@@ -32,7 +52,8 @@ struct Meeting: Identifiable, Codable, Hashable {
         summary: String = "",
         actionItems: [String] = [],
         chatMessages: [ChatMessage] = [],
-        audioFilePath: String? = nil
+        audioFilePath: String? = nil,
+        notes: [MeetingNote] = []
     ) {
         self.id = id
         self.title = title
@@ -44,6 +65,26 @@ struct Meeting: Identifiable, Codable, Hashable {
         self.actionItems = actionItems
         self.chatMessages = chatMessages
         self.audioFilePath = audioFilePath
+        self.notes = notes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, date, duration, segments, speakers, summary, actionItems, chatMessages, audioFilePath, notes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        date = try c.decode(Date.self, forKey: .date)
+        duration = try c.decode(TimeInterval.self, forKey: .duration)
+        segments = try c.decode([TranscriptSegment].self, forKey: .segments)
+        speakers = try c.decode([String: String].self, forKey: .speakers)
+        summary = try c.decode(String.self, forKey: .summary)
+        actionItems = try c.decode([String].self, forKey: .actionItems)
+        chatMessages = try c.decode([ChatMessage].self, forKey: .chatMessages)
+        audioFilePath = try c.decodeIfPresent(String.self, forKey: .audioFilePath)
+        notes = try c.decodeIfPresent([MeetingNote].self, forKey: .notes) ?? []
     }
 }
 

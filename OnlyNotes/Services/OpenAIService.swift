@@ -9,13 +9,19 @@ class OpenAIService {
 
     // MARK: - Summarization
 
-    func summarize(segments: [TranscriptSegment], speakers: [String: String]) async throws -> SummaryResult {
+    func summarize(segments: [TranscriptSegment], speakers: [String: String], notes: [MeetingNote] = []) async throws -> SummaryResult {
         let transcript = segments.map { segment in
             let name = speakers[String(segment.speakerTag)] ?? "Speaker \(segment.speakerTag)"
             return "\(name): \(segment.text)"
         }.joined(separator: "\n")
 
-        return try await summarizeTranscript(transcript)
+        var fullPromptText = transcript
+        if !notes.isEmpty {
+            let notesBlock = notes.map { "\($0.formattedTimestamp) - \($0.text)" }.joined(separator: "\n")
+            fullPromptText += "\n\nUser Notes (timestamps are relative to recording start):\n\(notesBlock)\n\nUse these notes as context for the user's intent and focus areas during the meeting. Do not invent facts not present in the transcript."
+        }
+
+        return try await summarizeTranscript(fullPromptText)
     }
 
     private func summarizeTranscript(_ transcript: String) async throws -> SummaryResult {

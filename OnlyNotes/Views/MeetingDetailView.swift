@@ -44,6 +44,7 @@ struct MeetingDetailView: View {
                 Text("Speakers").tag(2)
                 Text("Transcript").tag(3)
                 Text("Chat").tag(4)
+                Text("Notes").tag(5)
             }
             .pickerStyle(.segmented)
             .padding()
@@ -56,6 +57,7 @@ struct MeetingDetailView: View {
                     case 2: speakersView
                     case 3: transcriptView
                     case 4: chatView
+                    case 5: notesTab
                     default: EmptyView()
                     }
                 }
@@ -151,6 +153,28 @@ struct MeetingDetailView: View {
         MeetingChatView(meeting: $meeting)
     }
 
+    private var notesTab: some View {
+        Group {
+            if meeting.notes.isEmpty {
+                Text("No notes were captured during this recording.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(meeting.notes) { note in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text(note.formattedTimestamp)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .frame(width: 40, alignment: .leading)
+                        Text(note.text)
+                            .font(.subheadline)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private var uniqueSpeakerTags: [Int] {
@@ -166,7 +190,7 @@ struct MeetingDetailView: View {
         Task {
             do {
                 let service = OpenAIService(apiKey: appState.openAIKey)
-                let result = try await service.summarize(segments: meeting.segments, speakers: meeting.speakers)
+                let result = try await service.summarize(segments: meeting.segments, speakers: meeting.speakers, notes: meeting.notes)
                 var updated = meeting
                 updated.title = result.title
                 updated.summary = result.summary
@@ -219,6 +243,15 @@ struct MeetingDetailView: View {
             lines.append("")
             for item in meeting.actionItems {
                 lines.append("- \(item)")
+            }
+            lines.append("")
+        }
+
+        if !meeting.notes.isEmpty {
+            lines.append("## Notes")
+            lines.append("")
+            for note in meeting.notes {
+                lines.append("\(note.formattedTimestamp) - \(note.text)")
             }
             lines.append("")
         }
