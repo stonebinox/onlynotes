@@ -15,7 +15,7 @@ struct MeetingNote: Identifiable, Codable, Hashable {
     var formattedTimestamp: String {
         let m = Int(timestampOffset) / 60
         let s = Int(timestampOffset) % 60
-        return String(format: "%d:%02d", m, s)
+        return String(format: "%02d:%02d", m, s)
     }
 }
 

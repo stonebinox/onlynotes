@@ -160,15 +160,23 @@ struct MeetingDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(meeting.notes) { note in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text(note.formattedTimestamp)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .frame(width: 40, alignment: .leading)
-                        Text(note.text)
-                            .font(.subheadline)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(meeting.notes) { note in
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(note.formattedTimestamp)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                                    .frame(width: 40, alignment: .leading)
+                                Text(note.text)
+                                    .font(.subheadline)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 6)
+                            Divider()
+                                .padding(.leading)
+                        }
                     }
                 }
             }
