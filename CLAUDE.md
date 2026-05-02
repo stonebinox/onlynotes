@@ -16,14 +16,6 @@ OnlyNotes records meeting audio, transcribes it with speaker diarization via Goo
 - **Storage:** JSON file in ~/Library/Application Support/OnlyNotes/
 - **Issue Tracking:** bd (beads)
 
-## Workflow
-
-1. Create a `bd` task before starting any feature/fix
-2. Mark in-progress: `bd update <id> --status in_progress`
-3. Build must pass: `xcodebuild -scheme OnlyNotes -configuration Debug build`
-4. Commit with conventional format
-5. Close the task: `bd close <id>`
-
 ## Project Structure
 
 ```
@@ -31,58 +23,136 @@ OnlyNotes/
 ├── OnlyNotes.xcodeproj/
 ├── OnlyNotes/
 │   ├── OnlyNotesApp.swift       # App entry point, menu bar + window scenes
-│   ├── AppState.swift            # Shared app state (ObservableObject)
+│   ├── AppState.swift           # Shared app state + recorder + processing pipeline
 │   ├── Info.plist
 │   ├── OnlyNotes.entitlements
 │   ├── Models/
-│   │   └── Meeting.swift         # Meeting data model
+│   │   ├── Meeting.swift        # Meeting model + ChatMessage
+│   │   └── TranscriptSegment.swift
 │   ├── Services/
-│   │   ├── AudioRecorder.swift   # Mic recording via AVAudioEngine
-│   │   ├── OpenAIService.swift   # Whisper transcription + GPT summarization
-│   │   └── MeetingStore.swift    # JSON persistence
+│   │   ├── AudioRecorder.swift  # AVAudioEngine recording, drop detection
+│   │   ├── GoogleSpeechService.swift  # GCS upload + STT transcription
+│   │   ├── OpenAIService.swift  # Summarization + AI chat
+│   │   └── MeetingStore.swift   # JSON persistence
 │   └── Views/
-│       ├── ContentView.swift     # Main NavigationSplitView
-│       ├── MeetingListView.swift # Sidebar with recording controls + meeting list
-│       ├── MeetingDetailView.swift # Summary/action items/transcript tabs
-│       ├── MenuBarView.swift     # Menu bar dropdown
-│       └── SettingsView.swift    # API key configuration
+│       ├── ContentView.swift
+│       ├── MeetingListView.swift
+│       ├── MeetingDetailView.swift  # Summary/speakers/transcript/chat/playback/export
+│       ├── MenuBarView.swift
+│       └── SettingsView.swift
 ```
 
-## Build & Run
+## Build
 
 ```bash
-cd OnlyNotes
 xcodebuild -scheme OnlyNotes -configuration Debug build
-# Or open OnlyNotes.xcodeproj in Xcode
+```
+
+Build must pass before every commit. There is no automated test suite.
+
+---
+
+## ⛔ PRE-FLIGHT CHECK — Read This BEFORE Every Task
+
+**Before touching ANY file, answer these questions. If ANY answer is "no", STOP.**
+
+1. **Have I kicked off Codex co-scoping?** → If no: `codex exec` FIRST, before reading code or planning.
+2. **Am I about to edit a source file directly?** → If yes: STOP. Delegate to Sonnet via CLI.
+3. **Has Sonnet just finished?** → If yes: kick off Codex review FIRST, before building or committing.
+4. **Am I about to commit?** → If yes: confirm Codex review passed with zero BLOCKING issues AND build passes.
+
+---
+
+## Development Workflow
+
+### HARD RULE: Claude Never Codes
+
+**Claude MUST NOT write source code directly.** All code changes go through Sonnet, invoked as a CLI subprocess. The ONLY files Claude may edit directly are documentation: `CLAUDE.md`, `AGENTS.md`, memory files.
+
+- **Claude:** analyze, plan, orchestrate, review, commit
+- **Sonnet (via CLI):** write and edit Swift source files
+
+### How to Invoke Sonnet
+
+```bash
+(unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR; claude -p --model sonnet --dangerously-skip-permissions "PROMPT" 2>&1)
+```
+
+For larger prompts, write to a file and pipe it:
+```bash
+(unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR; cat /tmp/task-prompt.txt | claude -p --model sonnet --dangerously-skip-permissions 2>&1)
+```
+
+Always include in the prompt: which files to read, what to change, and the acceptance criteria.
+
+### Four-Phase Workflow
+
+Every task goes through all four phases — no exceptions.
+
+#### Phase 1: Planning (Claude + Codex pair)
+
+Claude reads the bd task and relevant code, then invokes Codex independently:
+
+```bash
+codex exec "Read bd task OnlyNotes-xxx with 'bd show OnlyNotes-xxx'. Explore the codebase at ~/Projects/OnlyNotes. Give your assessment: right approach, edge cases, risks, and acceptance criteria." --sandbox danger-full-access -o /tmp/codex-pair.md
+```
+
+**Do NOT pre-digest context for Codex.** Give it the task ID and let it explore independently. Claude reads the output, reconciles findings, and updates the bd task with the agreed plan.
+
+#### Phase 2: Implementation (Claude → Sonnet via CLI)
+
+- Claude delegates all Swift coding to Sonnet via CLI
+- Claude verifies the build passes: `xcodebuild -scheme OnlyNotes -configuration Debug build`
+- Claude reviews `git diff` after Sonnet finishes
+- Claude commits at meaningful milestones
+
+#### Phase 3: Pre-Push Review (Codex reviews)
+
+```bash
+codex exec "Review implementation of OnlyNotes-xxx. Run 'bd show OnlyNotes-xxx' for scope. Run 'git diff HEAD~1' or 'git diff' to see changes. Categorize findings as BLOCKING or NON-BLOCKING." --sandbox danger-full-access -o /tmp/codex-review.md
+```
+
+Do NOT tell Codex what to look for — let it review independently.
+
+#### Phase 4: Resolution
+
+- Claude addresses BLOCKING issues via Sonnet CLI
+- Re-invoke Codex review if blocking issues were fixed
+- NON-BLOCKING issues become new bd tasks
+
+### Codex CLI Notes
+
+- **Always use:** `codex exec "PROMPT" --sandbox danger-full-access -o /tmp/output.md`
+- **Never use:** `codex review`
+- **Why `danger-full-access`:** bd writes to SQLite outside the workdir; default sandbox blocks this
+
+---
+
+## Commit Rules
+
+- Conventional commits: `<type>: <subject>` with optional body
+- Types: `feat`, `fix`, `refactor`, `docs`, `style`, `chore`
+- **NO AI ATTRIBUTION** — never add "Co-authored-by: Claude" or similar
+- **Never push without explicit user consent**
+- **Build must pass before every commit**
+- Commit at meaningful milestones, not in large batches
+
+## Task Management (bd)
+
+```bash
+bd ready                              # Show unblocked work
+bd list                               # List open tasks
+bd create "Title" -d "Details"        # Create task
+bd show OnlyNotes-xxx                 # View task details
+bd update OnlyNotes-xxx --status in_progress
+bd close OnlyNotes-xxx                # Mark complete
+bd sync                               # Sync before git ops
 ```
 
 ## Key Design Decisions
 
 - **No App Sandbox** — simplifies mic access and file storage for personal use
-- **LSUIElement = YES** — app lives in menu bar, no dock icon
-- **JSON storage** — simple flat file, no Core Data overhead for this use case
-- **OpenAI API key stored in UserDefaults** — acceptable for personal app, would need Keychain for distribution
-
-## Commit Rules
-
-- Conventional commits: `<type>: <subject>` with optional body
-- Types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `chore`
-- **NO AI ATTRIBUTION** — never add "Co-authored-by: Claude" or similar
-- **Never push without explicit user consent**
-- **All builds must pass before any commit**
-- Commit at meaningful milestones, don't batch unrelated changes
-
-## Task Management
-
-- Use `bd` CLI for task tracking (`.beads/` directory)
-- `bd ready` — show unblocked work
-- `bd create "Title" -d "Details"` — create a task
-- `bd close <id>` — mark complete
-
-## Working Conventions
-
-- Keep code simple and readable — user is learning Swift
-- Prefer clear, explicit code over clever abstractions
-- No over-engineering — minimal code for the current requirement
-- No unused code or placeholder comments
-- Test builds with `xcodebuild` before considering done
+- **LSUIElement = YES** — menu bar app, no dock icon
+- **JSON storage** — flat file, no Core Data overhead
+- **GCS for transcription only** — upload → transcribe (longrunningrecognize) → delete
+- **Local audio files kept** — for playback; GCS is just a transcription pipe
