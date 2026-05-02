@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
@@ -40,10 +41,42 @@ struct NoteEditorView: View {
     @State var note: Note
     @State private var tagDraft: String = ""
     @State private var saveTimer: Timer? = nil
+    @State private var internalContextResults: [ContextResult] = []
+    @State private var webContextResults: [ContextResult] = []
+    @State private var contextError: String? = nil
+    @State private var isLoadingContext = false
+    @State private var contextTask: Task<Void, Never>? = nil
+    @State private var lastTriggeredBody: String = ""
 
     var body: some View {
+        HSplitView {
+            editorPane
+                .frame(minWidth: 300)
+            contextPane
+                .frame(minWidth: 240, maxWidth: 320)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: exportNote) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .help("Export note as Markdown")
+            }
+        }
+        .onDisappear {
+            saveTimer?.invalidate()
+            saveTimer = nil
+            contextTask?.cancel()
+        }
+        .onAppear {
+            if !note.body.isEmpty { refreshContext(query: buildQuery()) }
+        }
+        .id(note.id)
+    }
+
+    private var editorPane: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Title
             TextField("Title", text: $note.title)
                 .font(.title)
                 .fontWeight(.semibold)
@@ -52,25 +85,134 @@ struct NoteEditorView: View {
                 .padding(.bottom, 8)
                 .onChange(of: note.title) { _, _ in scheduleSave() }
 
-            // Tags
             tagEditorView
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
 
             Divider()
 
-            // Body
             TextEditor(text: $note.body)
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
-                .onChange(of: note.body) { _, _ in scheduleSave() }
+                .onChange(of: note.body) { _, new in
+                    scheduleSave()
+                    scheduleContextRefresh(body: new)
+                }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onDisappear {
-            saveTimer?.invalidate()
-            saveTimer = nil
+    }
+
+    private var contextPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Context")
+                    .font(.headline)
+                Spacer()
+                if isLoadingContext {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.bar)
+
+            Divider()
+
+            if !isLoadingContext && internalContextResults.isEmpty && webContextResults.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.tertiary)
+                    Text("Context will appear as you write")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if !internalContextResults.isEmpty {
+                            sectionHeader("From your notes", icon: "note.text")
+                            ForEach(internalContextResults) { result in
+                                contextResultRow(result)
+                                Divider().padding(.leading, 12)
+                            }
+                        }
+                        if !webContextResults.isEmpty {
+                            sectionHeader("From the web", icon: "globe")
+                            ForEach(webContextResults) { result in
+                                contextResultRow(result)
+                                Divider().padding(.leading, 12)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .background(.windowBackground)
+    }
+
+    private func sectionHeader(_ title: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary)
+    }
+
+    @ViewBuilder
+    private func contextResultRow(_ result: ContextResult) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: sourceIcon(result.source))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(result.title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            }
+            if !result.snippet.isEmpty {
+                Text(result.snippet)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+            if case .web(let url) = result.source {
+                Text(url)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .onTapGesture {
+                        if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+                    }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if case .internalNote(let id) = result.source {
+                _ = id
+            }
+        }
+    }
+
+    private func sourceIcon(_ source: ContextSource) -> String {
+        switch source {
+        case .internalNote: return "note.text"
+        case .web: return "globe"
         }
     }
 
@@ -129,6 +271,98 @@ struct NoteEditorView: View {
         updated.setTags(note.tags.filter { $0 != tag })
         note = updated
         appState.saveNote(updated)
+    }
+
+    private func scheduleContextRefresh(body: String) {
+        guard body.trimmingCharacters(in: .whitespacesAndNewlines).count > 20 else { return }
+        let triggerOnSentence = body.count > lastTriggeredBody.count &&
+            (body.hasSuffix(". ") || body.hasSuffix("? ") || body.hasSuffix("! ") || body.hasSuffix("\n"))
+
+        if triggerOnSentence {
+            lastTriggeredBody = body
+            refreshContext(query: buildQuery())
+            return
+        }
+
+        contextTask?.cancel()
+        contextTask = Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                lastTriggeredBody = note.body
+                refreshContext(query: buildQuery())
+            }
+        }
+    }
+
+    private func buildQuery() -> String {
+        let bodySnippet = String(note.body.suffix(300))
+        let parts = [note.title, bodySnippet].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return parts.joined(separator: " ")
+    }
+
+    private func refreshContext(query: String) {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        contextTask?.cancel()
+        contextTask = Task {
+            await MainActor.run { isLoadingContext = true; contextError = nil }
+
+            let notes = appState.notes
+            let openAIKey = appState.openAIKey
+            let braveKey = appState.braveSearchAPIKey
+            let currentTags = note.tags
+            let currentID = note.id
+
+            async let tagResults: [ContextResult] = Task.detached { @Sendable in
+                EmbeddingService.shared.findByTags(currentTags, among: notes, excludingID: currentID)
+            }.value
+            async let semanticResults = EmbeddingService.shared.findSimilar(to: query, among: notes, apiKey: openAIKey)
+            async let webFetch = BraveSearchService().search(query: query, apiKey: braveKey)
+
+            let (tags, semantic, webResult) = await (tagResults, semanticResults, webFetch)
+
+            if Task.isCancelled {
+                await MainActor.run { isLoadingContext = false }
+                return
+            }
+
+            var seen = Set<UUID>()
+            var internalResults: [ContextResult] = []
+            for r in tags + semantic {
+                if case .internalNote(let id) = r.source, seen.insert(id).inserted {
+                    internalResults.append(r)
+                }
+            }
+
+            await MainActor.run {
+                self.internalContextResults = internalResults
+                self.webContextResults = webResult
+                self.isLoadingContext = false
+            }
+        }
+    }
+
+    private func exportNote() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = (note.title.isEmpty ? "note" : note.title)
+            .replacingOccurrences(of: "/", with: "-") + ".md"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        var lines: [String] = []
+        lines.append("# \(note.title.isEmpty ? "Untitled" : note.title)")
+        lines.append(note.createdAt.formatted(date: .abbreviated, time: .shortened))
+        if !note.tags.isEmpty {
+            lines.append("Tags: \(note.tags.joined(separator: ", "))")
+        }
+        lines.append("")
+        if !note.body.isEmpty {
+            lines.append(note.body)
+            lines.append("")
+        }
+
+        let markdown = lines.joined(separator: "\n")
+        try? markdown.write(to: url, atomically: true, encoding: .utf8)
     }
 }
 

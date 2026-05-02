@@ -13,6 +13,16 @@ struct MeetingDetailView: View {
     private var attachment: MeetingAttachment? { note.meetingAttachment }
 
     var body: some View {
+        if attachment == nil {
+            VStack(spacing: 12) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.tertiary)
+                Text("No meeting data available")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             VStack(alignment: .leading, spacing: 8) {
@@ -73,6 +83,7 @@ struct MeetingDetailView: View {
             }
         }
         .textSelection(.enabled)
+        } // else
     }
 
     // MARK: - Tag Editor
@@ -389,44 +400,65 @@ struct MeetingDetailView: View {
         lines.append("# \(note.title.isEmpty ? "Untitled Note" : note.title)")
         lines.append("")
         lines.append("**Date:** \(note.createdAt.formatted(date: .long, time: .shortened))")
-        if let dur = attachment?.duration {
-            lines.append("**Duration:** \(formatDuration(dur))")
-        }
-        lines.append("")
 
-        if let summary = attachment?.summary, !summary.isEmpty {
-            lines.append("## Summary")
-            lines.append("")
-            lines.append(summary)
-            lines.append("")
-        }
-
-        if let items = attachment?.actionItems, !items.isEmpty {
-            lines.append("## Action Items")
-            lines.append("")
-            for item in items {
-                lines.append("- \(item)")
+        if attachment == nil {
+            // Plain note export
+            if !note.tags.isEmpty {
+                lines.append("**Tags:** \(note.tags.joined(separator: ", "))")
             }
             lines.append("")
-        }
-
-        if let meetingNotes = attachment?.notes, !meetingNotes.isEmpty {
-            lines.append("## Notes")
-            lines.append("")
-            for mn in meetingNotes {
-                lines.append("\(mn.formattedTimestamp) - \(mn.text)")
+            if !note.body.isEmpty {
+                lines.append(note.body)
+            }
+        } else {
+            // Meeting note export
+            if let dur = attachment?.duration {
+                lines.append("**Duration:** \(formatDuration(dur))")
+            }
+            if !note.tags.isEmpty {
+                lines.append("**Tags:** \(note.tags.joined(separator: ", "))")
             }
             lines.append("")
-        }
 
-        if let segments = attachment?.segments, !segments.isEmpty {
-            let speakers = attachment?.speakers ?? [:]
-            lines.append("## Transcript")
-            lines.append("")
-            for segment in segments {
-                let name = speakers[String(segment.speakerTag)] ?? "Speaker \(segment.speakerTag)"
-                lines.append("**\(name):** \(segment.text)")
+            if !note.body.isEmpty {
+                lines.append(note.body)
                 lines.append("")
+            }
+
+            if let summary = attachment?.summary, !summary.isEmpty {
+                lines.append("## Summary")
+                lines.append("")
+                lines.append(summary)
+                lines.append("")
+            }
+
+            if let items = attachment?.actionItems, !items.isEmpty {
+                lines.append("## Action Items")
+                lines.append("")
+                for item in items {
+                    lines.append("- \(item)")
+                }
+                lines.append("")
+            }
+
+            if let meetingNotes = attachment?.notes, !meetingNotes.isEmpty {
+                lines.append("## Notes")
+                lines.append("")
+                for mn in meetingNotes {
+                    lines.append("\(mn.formattedTimestamp) - \(mn.text)")
+                }
+                lines.append("")
+            }
+
+            if let segments = attachment?.segments, !segments.isEmpty {
+                let speakers = attachment?.speakers ?? [:]
+                lines.append("## Transcript")
+                lines.append("")
+                for segment in segments {
+                    let name = speakers[String(segment.speakerTag)] ?? "Speaker \(segment.speakerTag)"
+                    lines.append("**\(name):** \(segment.text)")
+                    lines.append("")
+                }
             }
         }
 

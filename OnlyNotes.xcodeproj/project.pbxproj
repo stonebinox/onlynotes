@@ -22,6 +22,9 @@
 		A10000010000000000000013 /* GoogleSpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000015; };
 		A10000010000000000000016 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000016; };
 		A10000010000000000000017 /* NoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000017; };
+		A10000010000000000000018 /* ContextResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000018; };
+		A10000010000000000000019 /* EmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000019; };
+		A10000010000000000000020 /* BraveSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000020; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +44,9 @@
 		A20000010000000000000015 /* GoogleSpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSpeechService.swift; sourceTree = "<group>"; };
 		A20000010000000000000016 /* Note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Note.swift; sourceTree = "<group>"; };
 		A20000010000000000000017 /* NoteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteStore.swift; sourceTree = "<group>"; };
+		A20000010000000000000018 /* ContextResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextResult.swift; sourceTree = "<group>"; };
+		A20000010000000000000019 /* EmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingService.swift; sourceTree = "<group>"; };
+		A20000010000000000000020 /* BraveSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BraveSearchService.swift; sourceTree = "<group>"; };
 		A20000010000000000000013 /* OnlyNotes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OnlyNotes.entitlements; sourceTree = "<group>"; };
 		A30000010000000000000001 /* OnlyNotes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnlyNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -84,6 +90,7 @@
 				A20000010000000000000003 /* Meeting.swift */,
 				A20000010000000000000016 /* Note.swift */,
 				A20000010000000000000014 /* TranscriptSegment.swift */,
+				A20000010000000000000018 /* ContextResult.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -96,6 +103,8 @@
 				A20000010000000000000006 /* MeetingStore.swift */,
 				A20000010000000000000017 /* NoteStore.swift */,
 				A20000010000000000000015 /* GoogleSpeechService.swift */,
+				A20000010000000000000019 /* EmbeddingService.swift */,
+				A20000010000000000000020 /* BraveSearchService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -187,6 +196,9 @@
 				A10000010000000000000013 /* GoogleSpeechService.swift in Sources */,
 				A10000010000000000000016 /* Note.swift in Sources */,
 				A10000010000000000000017 /* NoteStore.swift in Sources */,
+				A10000010000000000000018 /* ContextResult.swift in Sources */,
+				A10000010000000000000019 /* EmbeddingService.swift in Sources */,
+				A10000010000000000000020 /* BraveSearchService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

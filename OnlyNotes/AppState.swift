@@ -35,11 +35,27 @@ class AppState: ObservableObject {
 
     func loadNotes() {
         notes = NoteStore.shared.loadAll()
+        if let err = NoteStore.shared.loadError {
+            processingError = err
+        }
+        let ids = Set(notes.map { $0.id })
+        EmbeddingService.shared.pruneIndex(keeping: ids)
+        let snapshot = notes
+        let key = openAIKey
+        Task.detached {
+            for note in snapshot {
+                await EmbeddingService.shared.indexNote(note, apiKey: key)
+            }
+        }
     }
 
     func saveNote(_ note: Note) {
         NoteStore.shared.save(note)
         loadNotes()
+        Task.detached { [weak self] in
+            guard let self else { return }
+            await EmbeddingService.shared.indexNote(note, apiKey: self.openAIKey)
+        }
     }
 
     func deleteNote(_ note: Note) {

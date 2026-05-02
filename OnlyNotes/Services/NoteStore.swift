@@ -9,6 +9,7 @@ class NoteStore {
     static let shared = NoteStore()
 
     private(set) var migrationError: String? = nil
+    private(set) var loadError: String? = nil
 
     private var storageURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -75,8 +76,12 @@ class NoteStore {
         guard let data = try? Data(contentsOf: storageURL) else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let file = try? decoder.decode(NotesFile.self, from: data) else { return [] }
-        return file.notes
+        if let file = try? decoder.decode(NotesFile.self, from: data) {
+            loadError = nil
+            return file.notes
+        }
+        loadError = "Could not read notes data. File may be corrupted."
+        return []
     }
 
     func save(_ note: Note) {
@@ -95,7 +100,7 @@ class NoteStore {
         var notes = loadAll()
         notes.removeAll { $0.id == note.id }
         persist(notes)
-
+        EmbeddingService.shared.removeNote(id: note.id)
         if let path = note.meetingAttachment?.audioFilePath {
             try? FileManager.default.removeItem(atPath: path)
         }

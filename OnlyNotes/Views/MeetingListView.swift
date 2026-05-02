@@ -37,6 +37,9 @@ struct NoteListView: View {
                     }
                     .contextMenu {
                         Button("Delete", role: .destructive) {
+                            if selectedNote?.id == note.id {
+                                selectedNote = nil
+                            }
                             appState.deleteNote(note)
                         }
                     }
