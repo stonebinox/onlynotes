@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct MeetingDetailView: View {
     @EnvironmentObject var appState: AppState
@@ -20,9 +21,18 @@ struct MeetingDetailView: View {
                     if !meeting.segments.isEmpty {
                         Label("\(speakerCount) speakers", systemImage: "person.2")
                     }
+                    Spacer()
+                    Button(action: exportMeeting) {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+                if let path = meeting.audioFilePath {
+                    AudioPlayerBar(url: URL(fileURLWithPath: path))
+                }
             }
             .padding()
 
@@ -176,6 +186,55 @@ struct MeetingDetailView: View {
         if minutes < 1 { return "\(seconds)s" }
         return "\(minutes)m \(seconds)s"
     }
+
+    private func exportMeeting() {
+        let panel = NSSavePanel()
+        panel.title = "Export Meeting Notes"
+        panel.nameFieldStringValue = "\(meeting.title).md"
+        panel.allowedContentTypes = [.plainText]
+
+        if panel.runModal() == .OK, let url = panel.url {
+            let markdown = buildMarkdown()
+            try? markdown.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func buildMarkdown() -> String {
+        var lines: [String] = []
+        lines.append("# \(meeting.title)")
+        lines.append("")
+        lines.append("**Date:** \(meeting.date.formatted(date: .long, time: .shortened))")
+        lines.append("**Duration:** \(formatDuration(meeting.duration))")
+        lines.append("")
+
+        if !meeting.summary.isEmpty {
+            lines.append("## Summary")
+            lines.append("")
+            lines.append(meeting.summary)
+            lines.append("")
+        }
+
+        if !meeting.actionItems.isEmpty {
+            lines.append("## Action Items")
+            lines.append("")
+            for item in meeting.actionItems {
+                lines.append("- \(item)")
+            }
+            lines.append("")
+        }
+
+        if !meeting.segments.isEmpty {
+            lines.append("## Transcript")
+            lines.append("")
+            for segment in meeting.segments {
+                let name = meeting.speakers[String(segment.speakerTag)] ?? "Speaker \(segment.speakerTag)"
+                lines.append("**\(name):** \(segment.text)")
+                lines.append("")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
 }
 
 // MARK: - Speaker Rename Row
@@ -322,6 +381,92 @@ struct MeetingChatView: View {
             }
             isSending = false
         }
+    }
+}
+
+// MARK: - Audio Player Bar
+
+struct AudioPlayerBar: View {
+    let url: URL
+    @StateObject private var player = AudioPlayerController()
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button {
+                player.toggle()
+            } label: {
+                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+            }
+            .buttonStyle(.plain)
+
+            Text(formatTime(player.currentTime))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 36)
+
+            Slider(value: $player.currentTime, in: 0...max(player.duration, 1)) { editing in
+                if !editing { player.seek(to: player.currentTime) }
+            }
+
+            Text(formatTime(player.duration))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 36)
+        }
+        .onAppear { player.load(url: url) }
+        .onDisappear { player.pause() }
+    }
+
+    private func formatTime(_ t: TimeInterval) -> String {
+        let m = Int(t) / 60
+        let s = Int(t) % 60
+        return String(format: "%d:%02d", m, s)
+    }
+}
+
+@MainActor
+class AudioPlayerController: ObservableObject {
+    @Published var isPlaying = false
+    @Published var currentTime: Double = 0
+    @Published var duration: Double = 0
+
+    private var player: AVAudioPlayer?
+    private var timer: Timer?
+
+    func load(url: URL) {
+        guard let p = try? AVAudioPlayer(contentsOf: url) else { return }
+        p.prepareToPlay()
+        player = p
+        duration = p.duration
+    }
+
+    func toggle() {
+        isPlaying ? pause() : play()
+    }
+
+    func play() {
+        player?.play()
+        isPlaying = true
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self, let p = self.player else { return }
+            self.currentTime = p.currentTime
+            if !p.isPlaying { self.pause() }
+        }
+    }
+
+    func pause() {
+        player?.pause()
+        isPlaying = false
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func seek(to time: Double) {
+        player?.currentTime = time
     }
 }
 
