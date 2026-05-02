@@ -1,73 +1,59 @@
-import AVFoundation
 import Foundation
 
 class GoogleSpeechService {
     private let apiKey: String
-    private let chunkDuration: TimeInterval = 50  // seconds per chunk, safely under 60s sync limit
 
     init(apiKey: String) {
         self.apiKey = apiKey
     }
 
-    /// Transcribe an audio file, returning speaker-labeled segments.
-    func transcribe(audioURL: URL) async throws -> [TranscriptSegment] {
-        let chunks = try splitIntoChunks(url: audioURL)
-        var allSegments: [TranscriptSegment] = []
+    /// Transcribe an audio file via GCS upload + longrunningrecognize.
+    func transcribe(audioURL: URL, bucket: String) async throws -> [TranscriptSegment] {
+        let filename = audioURL.lastPathComponent
+        var gcsURI: String? = nil
 
-        for (chunkURL, timeOffset) in chunks {
-            let segments = try await transcribeChunk(url: chunkURL, timeOffset: timeOffset)
-            allSegments.append(contentsOf: segments)
-            try? FileManager.default.removeItem(at: chunkURL)
+        defer {
+            if let uri = gcsURI {
+                Task { await self.deleteFromGCS(bucket: bucket, filename: filename) }
+                _ = uri
+            }
         }
 
-        return allSegments
+        gcsURI = try await uploadToGCS(audioURL: audioURL, bucket: bucket, filename: filename)
+        let operationName = try await startLongRunningRecognize(gcsURI: gcsURI!)
+        let results = try await pollUntilDone(operationName: operationName)
+        return parseSegments(from: results)
     }
 
-    // MARK: - Chunking
+    // MARK: - GCS Upload
 
-    private func splitIntoChunks(url: URL) throws -> [(URL, TimeInterval)] {
-        let file = try AVAudioFile(forReading: url)
-        let format = file.processingFormat
-        let totalFrames = AVAudioFrameCount(file.length)
-        let framesPerChunk = AVAudioFrameCount(chunkDuration * format.sampleRate)
+    private func uploadToGCS(audioURL: URL, bucket: String, filename: String) async throws -> String {
+        let audioData = try Data(contentsOf: audioURL)
 
-        var chunks: [(URL, TimeInterval)] = []
-        var frameOffset: AVAudioFrameCount = 0
-
-        while frameOffset < totalFrames {
-            let framesToRead = min(framesPerChunk, totalFrames - frameOffset)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: framesToRead) else { break }
-
-            file.framePosition = AVAudioFramePosition(frameOffset)
-            try file.read(into: buffer, frameCount: framesToRead)
-
-            let timeOffset = Double(frameOffset) / format.sampleRate
-            let chunkURL = Self.tempChunkURL()
-            let chunkFile = try AVAudioFile(
-                forWriting: chunkURL,
-                settings: AudioRecorder.wavSettings(sampleRate: format.sampleRate),
-                commonFormat: format.commonFormat,
-                interleaved: format.isInterleaved
-            )
-            try chunkFile.write(from: buffer)
-            chunks.append((chunkURL, timeOffset))
-            frameOffset += framesToRead
+        guard let encodedFilename = filename.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let requestURL = URL(string: "https://storage.googleapis.com/upload/storage/v1/b/\(bucket)/o?uploadType=media&name=\(encodedFilename)&key=\(apiKey)") else {
+            throw GoogleSpeechError.invalidConfig
         }
 
-        return chunks
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "POST"
+        request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+        request.httpBody = audioData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GoogleSpeechError.uploadFailed(body)
+        }
+
+        return "gs://\(bucket)/\(filename)"
     }
 
-    // MARK: - Single Chunk Transcription
+    // MARK: - Long-Running Recognize
 
-    private func transcribeChunk(url: URL, timeOffset: TimeInterval) async throws -> [TranscriptSegment] {
-        let audioData = try Data(contentsOf: url)
-
-        // Determine sample rate from the file
-        let audioFile = try AVAudioFile(forReading: url)
-        let sampleRate = Int(audioFile.processingFormat.sampleRate)
-
-        let endpoint = "https://speech.googleapis.com/v1/speech:recognize?key=\(apiKey)"
-        guard let requestURL = URL(string: endpoint) else {
+    private func startLongRunningRecognize(gcsURI: String) async throws -> String {
+        guard let requestURL = URL(string: "https://speech.googleapis.com/v1/speech:longrunningrecognize?key=\(apiKey)") else {
             throw GoogleSpeechError.invalidConfig
         }
 
@@ -78,7 +64,7 @@ class GoogleSpeechService {
         let payload: [String: Any] = [
             "config": [
                 "encoding": "LINEAR16",
-                "sampleRateHertz": sampleRate,
+                "sampleRateHertz": 16000,
                 "languageCode": "en-US",
                 "alternativeLanguageCodes": ["kn-IN", "ta-IN"],
                 "diarizationConfig": [
@@ -91,7 +77,7 @@ class GoogleSpeechService {
                 "enableWordTimeOffsets": true
             ],
             "audio": [
-                "content": audioData.base64EncodedString()
+                "uri": gcsURI
             ]
         ]
 
@@ -100,22 +86,84 @@ class GoogleSpeechService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw GoogleSpeechError.transcriptionFailed(msg)
+            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GoogleSpeechError.transcriptionFailed(body)
         }
 
-        return try parseSegments(from: data, timeOffset: timeOffset)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = json["name"] as? String else {
+            throw GoogleSpeechError.transcriptionFailed("Missing operation name in response")
+        }
+
+        return name
+    }
+
+    // MARK: - Polling
+
+    private func pollUntilDone(operationName: String) async throws -> [[String: Any]] {
+        guard let requestURL = URL(string: "https://speech.googleapis.com/v1/operations/\(operationName)?key=\(apiKey)") else {
+            throw GoogleSpeechError.invalidConfig
+        }
+
+        let maxPolls = 180  // 15 minutes at 5s interval
+        for _ in 0..<maxPolls {
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+
+            let (data, response) = try await URLSession.shared.data(from: requestURL)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+                throw GoogleSpeechError.transcriptionFailed(body)
+            }
+
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+
+            let done = json["done"] as? Bool ?? false
+            guard done else { continue }
+
+            if let error = json["error"] as? [String: Any] {
+                let message = error["message"] as? String ?? "Unknown transcription error"
+                throw GoogleSpeechError.transcriptionFailed(message)
+            }
+
+            if let responseObj = json["response"] as? [String: Any],
+               let results = responseObj["results"] as? [[String: Any]] {
+                return results
+            }
+
+            return []
+        }
+
+        throw GoogleSpeechError.transcriptionFailed("Transcription timed out after 15 minutes")
+    }
+
+    // MARK: - GCS Delete
+
+    private func deleteFromGCS(bucket: String, filename: String) async {
+        guard let encodedFilename = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let requestURL = URL(string: "https://storage.googleapis.com/storage/v1/b/\(bucket)/o/\(encodedFilename)?key=\(apiKey)") else {
+            print("GoogleSpeechService: could not build delete URL for \(filename)")
+            return
+        }
+
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "DELETE"
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 300 {
+                print("GoogleSpeechService: GCS delete returned status \(httpResponse.statusCode) for \(filename)")
+            }
+        } catch {
+            print("GoogleSpeechService: GCS delete failed for \(filename): \(error)")
+        }
     }
 
     // MARK: - Response Parsing
 
-    private func parseSegments(from data: Data, timeOffset: TimeInterval) throws -> [TranscriptSegment] {
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = json["results"] as? [[String: Any]] else {
-            return []
-        }
-
-        // Speaker-labeled words are in the LAST result per Google's diarization docs
+    private func parseSegments(from results: [[String: Any]]) -> [TranscriptSegment] {
         guard let lastResult = results.last,
               let alternatives = lastResult["alternatives"] as? [[String: Any]],
               let firstAlt = alternatives.first,
@@ -123,10 +171,10 @@ class GoogleSpeechService {
             return []
         }
 
-        return groupWordsIntoSegments(words, timeOffset: timeOffset)
+        return groupWordsIntoSegments(words)
     }
 
-    private func groupWordsIntoSegments(_ words: [[String: Any]], timeOffset: TimeInterval) -> [TranscriptSegment] {
+    private func groupWordsIntoSegments(_ words: [[String: Any]]) -> [TranscriptSegment] {
         var segments: [TranscriptSegment] = []
         var currentSpeaker = 0
         var currentWords: [String] = []
@@ -136,8 +184,8 @@ class GoogleSpeechService {
         for wordData in words {
             guard let word = wordData["word"] as? String else { continue }
             let speakerTag = wordData["speakerTag"] as? Int ?? 1
-            let startTime = parseTime(wordData["startTime"] as? String ?? "0s") + timeOffset
-            let endTime = parseTime(wordData["endTime"] as? String ?? "0s") + timeOffset
+            let startTime = parseTime(wordData["startTime"] as? String ?? "0s")
+            let endTime = parseTime(wordData["endTime"] as? String ?? "0s")
 
             if speakerTag != currentSpeaker && !currentWords.isEmpty {
                 segments.append(TranscriptSegment(
@@ -172,21 +220,18 @@ class GoogleSpeechService {
     private func parseTime(_ str: String) -> TimeInterval {
         TimeInterval(str.replacingOccurrences(of: "s", with: "")) ?? 0
     }
-
-    private static func tempChunkURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("onlynotes_chunk_\(UUID().uuidString).wav")
-    }
 }
 
 
 enum GoogleSpeechError: LocalizedError {
     case invalidConfig
+    case uploadFailed(String)
     case transcriptionFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidConfig: return "Invalid Google Speech API configuration."
+        case .uploadFailed(let msg): return "GCS upload failed: \(msg)"
         case .transcriptionFailed(let msg): return "Google Speech transcription failed: \(msg)"
         }
     }

@@ -16,9 +16,15 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                 statusLabel(for: appState.googleAPIKey, purpose: "transcription & speaker detection")
             }
+
+            Section("Google Cloud Storage") {
+                TextField("GCS Bucket Name", text: $appState.googleBucketName)
+                    .textFieldStyle(.roundedBorder)
+                bucketStatusLabel(for: appState.googleBucketName)
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 280)
+        .frame(width: 450, height: 340)
     }
 
     @ViewBuilder
@@ -29,6 +35,19 @@ struct SettingsView: View {
                 .font(.caption)
         } else {
             Label("API key saved", systemImage: "checkmark.circle")
+                .foregroundStyle(.green)
+                .font(.caption)
+        }
+    }
+
+    @ViewBuilder
+    private func bucketStatusLabel(for bucket: String) -> some View {
+        if bucket.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Label("Required for audio upload & transcription", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+                .font(.caption)
+        } else {
+            Label("Bucket name saved", systemImage: "checkmark.circle")
                 .foregroundStyle(.green)
                 .font(.caption)
         }

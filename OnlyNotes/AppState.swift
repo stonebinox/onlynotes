@@ -8,6 +8,7 @@ class AppState: ObservableObject {
 
     @AppStorage("openAIKey") var openAIKey: String = ""
     @AppStorage("googleAPIKey") var googleAPIKey: String = ""
+    @AppStorage("googleBucketName") var googleBucketName: String = ""
 
     let recorder = AudioRecorder()
     private var cancellables = Set<AnyCancellable>()
@@ -47,12 +48,19 @@ class AppState: ObservableObject {
         guard let result = recorder.stopRecording() else { return }
         isProcessing = true
 
+        let bucket = googleBucketName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bucket.isEmpty else {
+            processingError = "GCS bucket name is required. Add it in Settings."
+            isProcessing = false
+            return
+        }
+
         Task {
             do {
                 let speechService = GoogleSpeechService(apiKey: googleAPIKey)
                 let openAIService = OpenAIService(apiKey: openAIKey)
 
-                let segments = try await speechService.transcribe(audioURL: result.url)
+                let segments = try await speechService.transcribe(audioURL: result.url, bucket: bucket)
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:])
 
                 let meeting = Meeting(
