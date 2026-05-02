@@ -12,6 +12,7 @@ class AppState: ObservableObject {
     @AppStorage("googleAPIKey") var googleAPIKey: String = ""
     @AppStorage("googleBucketName") var googleBucketName: String = ""
     @AppStorage("braveSearchAPIKey") var braveSearchAPIKey: String = ""
+    @AppStorage("serviceAccountKeyPath") var serviceAccountKeyPath: String = ""
     @AppStorage("appearanceMode") var appearanceModeRaw: String = AppearanceMode.system.rawValue
 
     var appearanceMode: AppearanceMode {
@@ -94,9 +95,16 @@ class AppState: ObservableObject {
             return
         }
 
+        let keyPath = serviceAccountKeyPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyPath.isEmpty else {
+            processingError = "Service account key path is required. Add it in Settings."
+            isProcessing = false
+            return
+        }
+
         Task {
             do {
-                let speechService = GoogleSpeechService(apiKey: googleAPIKey)
+                let speechService = GoogleSpeechService(apiKey: googleAPIKey, serviceAccountKeyPath: keyPath)
                 let openAIService = OpenAIService(apiKey: openAIKey)
 
                 let segments = try await speechService.transcribe(audioURL: result.url, bucket: bucket)

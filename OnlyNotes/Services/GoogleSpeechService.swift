@@ -2,52 +2,103 @@ import Foundation
 
 class GoogleSpeechService {
     private let apiKey: String
+    private let serviceAccountKeyPath: String
 
-    init(apiKey: String) {
+    init(apiKey: String, serviceAccountKeyPath: String) {
         self.apiKey = apiKey
+        self.serviceAccountKeyPath = serviceAccountKeyPath
     }
 
     /// Transcribe an audio file via GCS upload + longrunningrecognize.
     func transcribe(audioURL: URL, bucket: String) async throws -> [TranscriptSegment] {
         let filename = audioURL.lastPathComponent
-        var gcsURI: String? = nil
+        var uploaded = false
 
         defer {
-            if let uri = gcsURI {
+            if uploaded {
                 Task { await self.deleteFromGCS(bucket: bucket, filename: filename) }
-                _ = uri
             }
         }
 
-        gcsURI = try await uploadToGCS(audioURL: audioURL, bucket: bucket, filename: filename)
-        let operationName = try await startLongRunningRecognize(gcsURI: gcsURI!)
+        try await uploadToGCS(audioURL: audioURL, bucket: bucket, filename: filename)
+        uploaded = true
+        let gcsURI = "gs://\(bucket)/\(filename)"
+        let operationName = try await startLongRunningRecognize(gcsURI: gcsURI)
         let results = try await pollUntilDone(operationName: operationName)
         return parseSegments(from: results)
     }
 
     // MARK: - GCS Upload
 
-    private func uploadToGCS(audioURL: URL, bucket: String, filename: String) async throws -> String {
+    private func uploadToGCS(audioURL: URL, bucket: String, filename: String) async throws {
         let audioData = try Data(contentsOf: audioURL)
 
         guard let encodedFilename = filename.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let requestURL = URL(string: "https://storage.googleapis.com/upload/storage/v1/b/\(bucket)/o?uploadType=media&name=\(encodedFilename)&key=\(apiKey)") else {
+              let requestURL = URL(string: "https://storage.googleapis.com/upload/storage/v1/b/\(bucket)/o?uploadType=media&name=\(encodedFilename)") else {
             throw GoogleSpeechError.invalidConfig
         }
+
+        let token = try await GCSAuthService.shared.accessToken(serviceAccountKeyPath: serviceAccountKeyPath)
 
         var request = URLRequest(url: requestURL)
         request.httpMethod = "POST"
         request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = audioData
 
         let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+            // Token may be stale — invalidate and retry once
+            await GCSAuthService.shared.invalidate()
+            let freshToken = try await GCSAuthService.shared.accessToken(serviceAccountKeyPath: serviceAccountKeyPath)
+            var retryRequest = request
+            retryRequest.setValue("Bearer \(freshToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
+            guard let http = retryResponse as? HTTPURLResponse, http.statusCode == 200 else {
+                let body = String(data: retryData, encoding: .utf8) ?? "Unknown error"
+                throw GoogleSpeechError.uploadFailed(body)
+            }
+            return
+        }
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let body = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw GoogleSpeechError.uploadFailed(body)
         }
+    }
 
-        return "gs://\(bucket)/\(filename)"
+    // MARK: - GCS Delete
+
+    private func deleteFromGCS(bucket: String, filename: String) async {
+        guard !serviceAccountKeyPath.isEmpty,
+              let encodedFilename = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let requestURL = URL(string: "https://storage.googleapis.com/storage/v1/b/\(bucket)/o/\(encodedFilename)") else {
+            print("GoogleSpeechService: could not build delete URL for \(filename)")
+            return
+        }
+
+        guard let token = try? await GCSAuthService.shared.accessToken(serviceAccountKeyPath: serviceAccountKeyPath) else {
+            print("GoogleSpeechService: could not get auth token for GCS delete")
+            return
+        }
+
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 404 {
+                    print("GoogleSpeechService: GCS object not found (already deleted?) for \(filename)")
+                } else if httpResponse.statusCode >= 300 {
+                    print("GoogleSpeechService: GCS delete returned status \(httpResponse.statusCode) for \(filename)")
+                }
+            }
+        } catch {
+            print("GoogleSpeechService: GCS delete failed for \(filename): \(error)")
+        }
     }
 
     // MARK: - Long-Running Recognize
@@ -137,28 +188,6 @@ class GoogleSpeechService {
         }
 
         throw GoogleSpeechError.transcriptionFailed("Transcription timed out after 15 minutes")
-    }
-
-    // MARK: - GCS Delete
-
-    private func deleteFromGCS(bucket: String, filename: String) async {
-        guard let encodedFilename = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let requestURL = URL(string: "https://storage.googleapis.com/storage/v1/b/\(bucket)/o/\(encodedFilename)?key=\(apiKey)") else {
-            print("GoogleSpeechService: could not build delete URL for \(filename)")
-            return
-        }
-
-        var request = URLRequest(url: requestURL)
-        request.httpMethod = "DELETE"
-
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 300 {
-                print("GoogleSpeechService: GCS delete returned status \(httpResponse.statusCode) for \(filename)")
-            }
-        } catch {
-            print("GoogleSpeechService: GCS delete failed for \(filename): \(error)")
-        }
     }
 
     // MARK: - Response Parsing
