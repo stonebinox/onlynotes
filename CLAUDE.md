@@ -4,16 +4,25 @@ A local-first macOS meeting notes app built with Swift + SwiftUI.
 
 ## Project Overview
 
-OnlyNotes captures meeting audio, transcribes it using OpenAI Whisper, and generates summaries with action items using GPT-4o. All data stays local on the user's device.
+OnlyNotes records meeting audio, transcribes it with speaker diarization via Google Cloud Speech-to-Text, and generates summaries + AI chat via OpenAI GPT-4o. All data stays local on the user's device.
 
 ## Tech Stack
 
 - **Language:** Swift 5
 - **UI:** SwiftUI (macOS 14+)
-- **Audio:** AVAudioEngine for mic recording
-- **AI:** OpenAI API (Whisper for transcription, GPT-4o for summaries)
+- **Audio:** AVAudioEngine (16kHz mono WAV, drop-resistant with AVAudioEngineConfigurationChange)
+- **Transcription:** Google Cloud Speech-to-Text v1 (speaker diarization, en-US + kn-IN + ta-IN)
+- **AI:** OpenAI GPT-4o (summarization, AI chat per meeting)
 - **Storage:** JSON file in ~/Library/Application Support/OnlyNotes/
 - **Issue Tracking:** bd (beads)
+
+## Workflow
+
+1. Create a `bd` task before starting any feature/fix
+2. Mark in-progress: `bd update <id> --status in_progress`
+3. Build must pass: `xcodebuild -scheme OnlyNotes -configuration Debug build`
+4. Commit with conventional format
+5. Close the task: `bd close <id>`
 
 ## Project Structure
 
