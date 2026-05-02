@@ -6,6 +6,8 @@ struct MeetingDetailView: View {
     @State var meeting: Meeting
     @State private var selectedTab = 0
     @State private var isRegenerating = false
+    @State private var editingNoteID: UUID? = nil
+    @State private var editingNoteDraft: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -163,23 +165,111 @@ struct MeetingDetailView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(meeting.notes) { note in
-                            HStack(alignment: .top, spacing: 10) {
-                                Text(note.formattedTimestamp)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                                    .frame(width: 40, alignment: .leading)
-                                Text(note.text)
-                                    .font(.subheadline)
-                            }
-                            .padding(.horizontal)
-                            .padding(.vertical, 6)
+                            noteRow(for: note)
                             Divider()
                                 .padding(.leading)
                         }
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func noteRow(for note: MeetingNote) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(note.formattedTimestamp)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(width: 40, alignment: .leading)
+                .padding(.top, editingNoteID == note.id ? 6 : 0)
+
+            if editingNoteID == note.id {
+                // Editing mode
+                TextField("Note", text: $editingNoteDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline)
+                    .onSubmit { commitNoteEdit(id: note.id) }
+
+                Button(action: { commitNoteEdit(id: note.id) }) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                .buttonStyle(.plain)
+                .disabled(editingNoteDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button(action: { cancelNoteEdit() }) {
+                    Image(systemName: "xmark.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Display mode
+                Text(note.text)
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { beginNoteEdit(note) }
+
+                HStack(spacing: 8) {
+                    Button(action: { beginNoteEdit(note) }) {
+                        Image(systemName: "pencil")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { deleteNote(id: note.id) }) {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .contextMenu {
+            Button("Edit") { beginNoteEdit(note) }
+            Divider()
+            Button("Delete", role: .destructive) { deleteNote(id: note.id) }
+        }
+    }
+
+    private func beginNoteEdit(_ note: MeetingNote) {
+        editingNoteID = note.id
+        editingNoteDraft = note.text
+    }
+
+    private func cancelNoteEdit() {
+        editingNoteID = nil
+        editingNoteDraft = ""
+    }
+
+    private func commitNoteEdit(id: UUID) {
+        let trimmed = editingNoteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            cancelNoteEdit()
+            return
+        }
+        var updated = meeting
+        if let idx = updated.notes.firstIndex(where: { $0.id == id }) {
+            updated.notes[idx].text = trimmed
+        }
+        meeting = updated
+        appState.saveMeeting(updated)
+        editingNoteID = nil
+        editingNoteDraft = ""
+    }
+
+    private func deleteNote(id: UUID) {
+        var updated = meeting
+        updated.notes.removeAll { $0.id == id }
+        meeting = updated
+        appState.saveMeeting(updated)
+        if editingNoteID == id {
+            editingNoteID = nil
+            editingNoteDraft = ""
         }
     }
 
