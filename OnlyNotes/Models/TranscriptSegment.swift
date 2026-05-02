@@ -2,7 +2,7 @@ import Foundation
 
 struct TranscriptSegment: Identifiable, Codable, Hashable {
     let id: UUID
-    var speakerTag: Int        // raw tag from Google (1, 2, 3...)
+    var speakerTag: Int        // speaker identifier (1, 2, 3...), 0 = system message
     var text: String
     var startTime: TimeInterval
     var endTime: TimeInterval

@@ -9,10 +9,7 @@ class AppState: ObservableObject {
     @Published var liveNoteDraft: String = ""
 
     @AppStorage("openAIKey") var openAIKey: String = ""
-    @AppStorage("googleAPIKey") var googleAPIKey: String = ""
-    @AppStorage("googleBucketName") var googleBucketName: String = ""
     @AppStorage("braveSearchAPIKey") var braveSearchAPIKey: String = ""
-    @AppStorage("serviceAccountKeyPath") var serviceAccountKeyPath: String = ""
     @AppStorage("appearanceMode") var appearanceModeRaw: String = AppearanceMode.system.rawValue
 
     var appearanceMode: AppearanceMode {
@@ -88,26 +85,12 @@ class AppState: ObservableObject {
         isProcessing = true
         let capturedNotes = liveNotes
 
-        let bucket = googleBucketName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !bucket.isEmpty else {
-            processingError = "GCS bucket name is required. Add it in Settings."
-            isProcessing = false
-            return
-        }
-
-        let keyPath = serviceAccountKeyPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyPath.isEmpty else {
-            processingError = "Service account key path is required. Add it in Settings."
-            isProcessing = false
-            return
-        }
-
         Task {
             do {
-                let speechService = GoogleSpeechService(apiKey: googleAPIKey, serviceAccountKeyPath: keyPath)
+                let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
                 let openAIService = OpenAIService(apiKey: openAIKey)
 
-                let segments = try await speechService.transcribe(audioURL: result.url, bucket: bucket)
+                let segments = try await whisperService.transcribe(audioURL: result.url)
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:], notes: capturedNotes)
 
                 let attachment = MeetingAttachment(
