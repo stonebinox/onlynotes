@@ -1,3 +1,4 @@
+import CoreGraphics
 import SwiftUI
 import Combine
 
@@ -29,8 +30,8 @@ class AppState: ObservableObject {
             processingError = err
         }
 
-        recorder.onUnexpectedStop = { [weak self] in
-            self?.processingError = "Recording stopped unexpectedly. Check your microphone."
+        recorder.onUnexpectedStop = { [weak self] message in
+            self?.processingError = message ?? "Recording stopped unexpectedly. Check audio permissions and try again."
         }
         recorder.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
@@ -77,6 +78,10 @@ class AppState: ObservableObject {
 
     func startRecording() throws {
         processingError = nil
+        if !CGPreflightScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+            throw RecorderError.screenCapturePermissionDenied
+        }
         try recorder.startRecording()
     }
 

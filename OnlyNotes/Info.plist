@@ -4,5 +4,7 @@
 <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>OnlyNotes needs microphone access to record meeting audio.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>OnlyNotes needs screen recording access to capture meeting audio from Zoom, Google Meet, and other apps.</string>
 </dict>
 </plist>
