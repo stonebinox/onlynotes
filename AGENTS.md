@@ -10,22 +10,24 @@ You are always invoked by Claude via `codex exec --sandbox danger-full-access -o
 
 ## What is OnlyNotes?
 
-A local-first macOS meeting notes app. It records meeting audio via the mic, transcribes it using Google Cloud Speech-to-Text (with speaker diarization and multilingual support for en-US, kn-IN, ta-IN), and generates summaries + AI chat via OpenAI GPT-4o. No cloud storage of data — everything stays on the user's Mac except the temporary GCS upload used for transcription.
+A local-first macOS meeting notes app. Records meeting audio (mic + system audio), transcribes via OpenAI Whisper (chunked for long recordings), infers speaker labels with GPT-4o, then generates summaries + AI chat. No Google Cloud — the full pipeline runs on a single OpenAI API key. All data stays local.
 
-**Stack:** Swift 5, SwiftUI, AVAudioEngine, Google Cloud Speech-to-Text v1, OpenAI GPT-4o, JSON file storage.
+**Stack:** Swift 5, SwiftUI, AVAudioEngine, OpenAI Whisper + GPT-4o, JSON file storage.
 
 ---
 
 ## When You Are Called for PAIR Planning
 
-Claude will give you a bd task ID. Your job:
+Claude gives you a plain description of what we want to achieve — nothing more. Your job is to form a fully independent assessment:
 
-1. **Read the bd task** — run `bd show OnlyNotes-xxx` for full scope
-2. **Read the relevant source files** — don't rely on Claude's summary
-3. **Challenge assumptions** — does the approach handle edge cases?
+1. **Explore the codebase yourself** — `find` or `ls` to discover relevant files; read them directly. Do not rely on anything Claude told you about which files matter.
+2. **Form your own view of the right approach** — don't assume Claude's framing is correct.
+3. **Challenge assumptions** — what could go wrong? What edge cases exist?
 4. **Suggest alternatives** — is there a simpler or more robust path?
-5. **Agree on scope** — define clear acceptance criteria
-6. **Flag risks** — API surface changes, model changes, error handling gaps
+5. **Define acceptance criteria** — what does "done" look like?
+6. **Flag risks** — API surface changes, memory management, error handling gaps, Swift gotchas
+
+**There is no bd task yet at this stage.** Claude creates it after reading your output. Be thorough — your independent perspective is the entire point. A finding Claude missed is more valuable than confirming what Claude already knew.
 
 Be specific. Reference file paths and function/struct names.
 
@@ -33,23 +35,26 @@ Be specific. Reference file paths and function/struct names.
 
 ## When You Are Called for Code Review
 
-Claude has implemented the task via Sonnet. Your job:
+Claude has implemented something via Sonnet. Your job is to review it cold:
 
-1. **Get the scope** — run `bd show OnlyNotes-xxx`
-2. **Review the diff** — run `git diff HEAD~1` or `git diff` for uncommitted changes
-3. **Check against scope** — did implementation match what was agreed?
-4. **Look for issues:**
+1. **Find the relevant task yourself** — run `bd list` to see open tasks, then `bd show OnlyNotes-xxx` for scope. Do not assume Claude told you the right task ID.
+2. **Review the diff** — run `git diff HEAD~1` to see what changed
+3. **Explore the affected files** — read them directly, don't just read the diff
+4. **Check against scope** — did implementation match what was agreed?
+5. **Look for issues independently:**
    - Missed requirements
    - Bugs or logic errors
    - Swift API misuse (wrong AVFoundation patterns, memory leaks, missing `weak self`)
    - Over-engineering beyond scope
-   - No unused code or placeholder comments
-   - Error handling — all API calls should handle failure gracefully
-5. **Verify the build** — run `xcodebuild -scheme OnlyNotes -configuration Debug build` from `~/Projects/OnlyNotes`
-6. **Categorize each finding:**
+   - Unused code or placeholder comments left in
+   - Error handling — all API calls must handle failure gracefully
+6. **Verify the build** — run `xcodebuild -scheme OnlyNotes -configuration Debug build` from `~/Projects/OnlyNotes`
+7. **Categorize each finding:**
    - **BLOCKING** — Must fix before commit (bugs, missed requirements, build failures, crashes)
    - **NON-BLOCKING** — Follow-up task (style nits, minor refactors, nice-to-haves)
-7. **Approve or request changes** — no rubber-stamping
+8. **Approve or request changes** — no rubber-stamping. If you find nothing wrong, say so explicitly and why.
+
+**Do not let Claude's framing bias your review.** You were not told what to look for on purpose.
 
 ---
 
@@ -79,9 +84,11 @@ OnlyNotes/
     │   └── TranscriptSegment.swift
     ├── Services/
     │   ├── AudioRecorder.swift
-    │   ├── GoogleSpeechService.swift
+    │   ├── WhisperTranscriptionService.swift
     │   ├── OpenAIService.swift
-    │   └── MeetingStore.swift
+    │   ├── EmbeddingService.swift
+    │   ├── BraveSearchService.swift
+    │   └── NoteStore.swift
     └── Views/
         ├── MeetingListView.swift
         ├── MeetingDetailView.swift

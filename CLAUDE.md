@@ -11,8 +11,8 @@ OnlyNotes records meeting audio, transcribes it with speaker diarization via Goo
 - **Language:** Swift 5
 - **UI:** SwiftUI (macOS 14+)
 - **Audio:** AVAudioEngine (16kHz mono WAV, drop-resistant with AVAudioEngineConfigurationChange)
-- **Transcription:** Google Cloud Speech-to-Text v1 (speaker diarization, en-US + kn-IN + ta-IN)
-- **AI:** OpenAI GPT-4o (summarization, AI chat per meeting)
+- **Transcription:** OpenAI Whisper (chunked, verbose_json) + GPT-4o speaker inference
+- **AI:** OpenAI GPT-4o (summarization, AI chat per meeting, speaker diarization)
 - **Storage:** JSON file in ~/Library/Application Support/OnlyNotes/
 - **Issue Tracking:** bd (beads)
 
@@ -91,13 +91,20 @@ Every task goes through all four phases — no exceptions.
 
 #### Phase 1: Planning (Claude + Codex pair)
 
-Claude reads the bd task and relevant code, then invokes Codex independently:
+Claude describes the goal in plain language to Codex — nothing more. Then invokes:
 
 ```bash
-codex exec "Read bd task OnlyNotes-xxx with 'bd show OnlyNotes-xxx'. Explore the codebase at ~/Projects/OnlyNotes. Give your assessment: right approach, edge cases, risks, and acceptance criteria." --sandbox danger-full-access -o /tmp/codex-pair.md
+codex exec "PLAIN DESCRIPTION OF WHAT WE WANT TO ACHIEVE. Explore the codebase at ~/Projects/OnlyNotes and give your full independent assessment." --sandbox danger-full-access -o /tmp/codex-pair.md
 ```
 
-**Do NOT pre-digest context for Codex.** Give it the task ID and let it explore independently. Claude reads the output, reconciles findings, and updates the bd task with the agreed plan.
+**⛔ HARD RULES for Phase 1 — violating any of these is wrong:**
+- **NO bd task yet.** The bd task is created AFTER Codex scoping, not before.
+- **NO file hints.** Do not tell Codex which files to look at. It must find them itself.
+- **NO approach hints.** Do not suggest an implementation strategy. Codex must form its own view.
+- **NO pre-digested context.** Don't summarise what you already know. Give Codex a clean slate.
+- The goal is a genuine independent second opinion — a pair programmer who might catch what you missed, not a mirror that confirms what you already think.
+
+After reading Codex's output, Claude reconciles findings with its own thinking, resolves any disagreements with the user if needed, then creates the bd task with the consolidated plan.
 
 #### Phase 2: Implementation (Claude → Sonnet via CLI)
 
@@ -109,10 +116,14 @@ codex exec "Read bd task OnlyNotes-xxx with 'bd show OnlyNotes-xxx'. Explore the
 #### Phase 3: Pre-Push Review (Codex reviews)
 
 ```bash
-codex exec "Review implementation of OnlyNotes-xxx. Run 'bd show OnlyNotes-xxx' for scope. Run 'git diff HEAD~1' or 'git diff' to see changes. Categorize findings as BLOCKING or NON-BLOCKING." --sandbox danger-full-access -o /tmp/codex-review.md
+codex exec "Review the latest implementation in the OnlyNotes codebase at ~/Projects/OnlyNotes. Run 'bd list' to find the relevant in-progress task, then 'bd show OnlyNotes-xxx' for scope. Run 'git diff HEAD~1' to see what changed. Categorize all findings as BLOCKING or NON-BLOCKING." --sandbox danger-full-access -o /tmp/codex-review.md
 ```
 
-Do NOT tell Codex what to look for — let it review independently.
+**⛔ HARD RULES for Phase 3 — violating any of these is wrong:**
+- **NO file hints.** Do not tell Codex which files to review.
+- **NO issue hints.** Do not tell Codex what to look for or what might be wrong.
+- **NO approach hints.** Do not describe how it was implemented.
+- Codex must review the diff cold and form its own findings independently.
 
 #### Phase 4: Resolution
 
@@ -154,5 +165,5 @@ bd sync                               # Sync before git ops
 - **No App Sandbox** — simplifies mic access and file storage for personal use
 - **LSUIElement = YES** — menu bar app, no dock icon
 - **JSON storage** — flat file, no Core Data overhead
-- **GCS for transcription only** — upload → transcribe (longrunningrecognize) → delete
-- **Local audio files kept** — for playback; GCS is just a transcription pipe
+- **No Google Cloud** — transcription is fully OpenAI (Whisper + GPT-4o), no GCS
+- **Local audio files kept** — for playback
