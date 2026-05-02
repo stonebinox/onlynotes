@@ -23,9 +23,9 @@ struct ContentView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "note.text")
                         .font(.system(size: 48))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.onFaintInk)
                     Text("Select a note or start recording")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.onMutedInk)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -106,27 +106,28 @@ struct NoteEditorView: View {
     private var contextPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Context")
-                    .font(.headline)
+                Label("Context", systemImage: "sparkles")
+                    .font(.onHeadline)
+                    .foregroundStyle(Color.onInk)
                 Spacer()
                 if isLoadingContext {
-                    ProgressView().controlSize(.small)
+                    ProgressView().controlSize(.small).tint(Color.onAccent)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(.bar)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.md)
+            .background(Color.onPanel)
 
             Divider()
 
             if !isLoadingContext && internalContextResults.isEmpty && webContextResults.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.tertiary)
-                    Text("Context will appear as you write")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(spacing: Spacing.sm) {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Color.onFaintInk)
+                    Text("Context will appear\nas you write")
+                        .font(.onCaption)
+                        .foregroundStyle(Color.onFaintInk)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -151,69 +152,48 @@ struct NoteEditorView: View {
                 }
             }
         }
-        .background(.windowBackground)
+        .background(Color.onPanel)
     }
 
     private func sectionHeader(_ title: String, icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary)
+        Label(title, systemImage: icon)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Color.onMutedInk)
+            .textCase(.uppercase)
+            .tracking(0.8)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.onPanel)
     }
 
     @ViewBuilder
     private func contextResultRow(_ result: ContextResult) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: sourceIcon(result.source))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(result.title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-            }
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(result.title)
+                .font(.onCaption)
+                .fontWeight(.medium)
+                .foregroundStyle(Color.onInk)
+                .lineLimit(1)
             if !result.snippet.isEmpty {
                 Text(result.snippet)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.onMutedInk)
                     .lineLimit(3)
             }
             if case .web(let url) = result.source {
                 Text(url)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.onMeta)
+                    .foregroundStyle(Color.onAccent)
                     .lineLimit(1)
                     .onTapGesture {
                         if let u = URL(string: url) { NSWorkspace.shared.open(u) }
                     }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if case .internalNote(let id) = result.source {
-                _ = id
-            }
-        }
-    }
-
-    private func sourceIcon(_ source: ContextSource) -> String {
-        switch source {
-        case .internalNote: return "note.text"
-        case .web: return "globe"
-        }
     }
 
     private var tagEditorView: some View {
@@ -229,7 +209,7 @@ struct NoteEditorView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.quaternary, in: Capsule())
+                    .background(Color.onSeparator.opacity(0.5), in: Capsule())
                 }
                 TextField("Add tag...", text: $tagDraft)
                     .font(.caption)
@@ -373,7 +353,7 @@ struct LiveNotepadView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(.red)
+                    .fill(Color.onRecordActive)
                     .frame(width: 8, height: 8)
                 Text("Live Notes")
                     .font(.title2)
@@ -382,7 +362,7 @@ struct LiveNotepadView: View {
 
             if appState.liveNotes.isEmpty {
                 Text("No notes yet. Jot down questions or key moments.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.onMutedInk)
                     .font(.subheadline)
             } else {
                 ScrollView {

@@ -41,7 +41,7 @@ struct MenuBarView: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Transcribing…")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.onMutedInk)
                     .font(.callout)
             }
             .padding(.vertical, 4)
@@ -55,7 +55,7 @@ struct MenuBarView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: appState.recorder.isRecording ? "stop.circle.fill" : "record.circle")
-                        .foregroundStyle(appState.recorder.isRecording ? .red : .accentColor)
+                        .foregroundStyle(appState.recorder.isRecording ? Color.onRecordActive : Color.onAccent)
                         .font(.title3)
 
                     VStack(alignment: .leading, spacing: 1) {
@@ -66,7 +66,7 @@ struct MenuBarView: View {
                             Text(formatTime(appState.recorder.elapsedTime))
                                 .font(.caption)
                                 .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.onMutedInk)
                         }
                     }
                 }

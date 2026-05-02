@@ -12,6 +12,12 @@ class AppState: ObservableObject {
     @AppStorage("googleAPIKey") var googleAPIKey: String = ""
     @AppStorage("googleBucketName") var googleBucketName: String = ""
     @AppStorage("braveSearchAPIKey") var braveSearchAPIKey: String = ""
+    @AppStorage("appearanceMode") var appearanceModeRaw: String = AppearanceMode.system.rawValue
+
+    var appearanceMode: AppearanceMode {
+        AppearanceMode(rawValue: appearanceModeRaw) ?? .system
+    }
+    var preferredColorScheme: ColorScheme? { appearanceMode.colorScheme }
 
     let recorder = AudioRecorder()
     private var cancellables = Set<AnyCancellable>()

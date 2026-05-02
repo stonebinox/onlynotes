@@ -17,9 +17,9 @@ struct MeetingDetailView: View {
             VStack(spacing: 12) {
                 Image(systemName: "doc.text")
                     .font(.system(size: 36))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.onFaintInk)
                 Text("No meeting data available")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.onMutedInk)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -27,8 +27,8 @@ struct MeetingDetailView: View {
             // Header
             VStack(alignment: .leading, spacing: 8) {
                 Text(note.title.isEmpty ? "Untitled Note" : note.title)
-                    .font(.title)
-                    .fontWeight(.bold)
+                    .font(.onTitle)
+                    .foregroundStyle(Color.onInk)
 
                 HStack(spacing: 16) {
                     Label(note.createdAt.formatted(date: .long, time: .shortened), systemImage: "calendar")
@@ -42,8 +42,8 @@ struct MeetingDetailView: View {
                     }
                     .buttonStyle(.bordered)
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.onMeta)
+                .foregroundStyle(Color.onFaintInk)
 
                 tagEditor
 
@@ -52,19 +52,17 @@ struct MeetingDetailView: View {
                 }
             }
             .padding()
-
-            Divider()
-
-            Picker("", selection: $selectedTab) {
-                Text("Summary").tag(0)
-                Text("Action Items").tag(1)
-                Text("Speakers").tag(2)
-                Text("Transcript").tag(3)
-                Text("Chat").tag(4)
-                Text("Notes").tag(5)
+            .background(Color.onPanel)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color.onSeparator)
+                    .frame(height: 1)
             }
-            .pickerStyle(.segmented)
-            .padding()
+
+            EditorialTabBar(
+                tabs: ["Summary", "Action Items", "Speakers", "Transcript", "Chat", "Notes"],
+                selection: $selectedTab
+            )
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -104,7 +102,7 @@ struct MeetingDetailView: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(.quaternary, in: Capsule())
+                        .background(Color.onSeparator.opacity(0.5), in: Capsule())
                     }
 
                     TextField("Add tag...", text: $tagDraft)
@@ -631,14 +629,14 @@ struct AudioPlayerBar: View {
             } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title2)
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(Color.onAccent)
             }
             .buttonStyle(.plain)
 
             Text(formatTime(player.currentTime))
                 .font(.caption)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.onMutedInk)
                 .frame(width: 36)
 
             Slider(value: $player.currentTime, in: 0...max(player.duration, 1)) { editing in
@@ -648,7 +646,7 @@ struct AudioPlayerBar: View {
             Text(formatTime(player.duration))
                 .font(.caption)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.onMutedInk)
                 .frame(width: 36)
         }
         .onAppear { player.load(url: url) }
@@ -717,6 +715,43 @@ struct ChatBubble: View {
                 .foregroundStyle(message.role == "user" ? .white : .primary)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             if message.role == "assistant" { Spacer(minLength: 60) }
+        }
+    }
+}
+
+// MARK: - Editorial Tab Bar
+
+struct EditorialTabBar: View {
+    let tabs: [String]
+    @Binding var selection: Int
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(tabs.indices, id: \.self) { i in
+                    Button(action: { withAnimation(.easeInOut(duration: 0.18)) { selection = i } }) {
+                        VStack(spacing: 4) {
+                            Text(tabs[i])
+                                .font(selection == i ? .onHeadline : .onBody)
+                                .foregroundStyle(selection == i ? Color.onInk : Color.onMutedInk)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.top, Spacing.sm)
+
+                            Rectangle()
+                                .fill(selection == i ? Color.onAccent : Color.clear)
+                                .frame(height: 2)
+                                .padding(.horizontal, Spacing.sm)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .background(Color.onPanel)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.onSeparator)
+                .frame(height: 1)
         }
     }
 }

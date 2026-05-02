@@ -9,6 +9,7 @@ struct OnlyNotesApp: App {
         MenuBarExtra("OnlyNotes", systemImage: "mic.circle.fill") {
             MenuBarView()
                 .environmentObject(appState)
+                .preferredColorScheme(appState.preferredColorScheme)
         }
         .menuBarExtraStyle(.window)
 
@@ -16,11 +17,13 @@ struct OnlyNotesApp: App {
             ContentView()
                 .environmentObject(appState)
                 .frame(minWidth: 800, minHeight: 540)
+                .preferredColorScheme(appState.preferredColorScheme)
         }
 
         Settings {
             SettingsView()
                 .environmentObject(appState)
+                .preferredColorScheme(appState.preferredColorScheme)
         }
     }
 

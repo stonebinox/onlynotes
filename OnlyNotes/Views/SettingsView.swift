@@ -5,6 +5,15 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Appearance") {
+                Picker("Mode", selection: $appState.appearanceModeRaw) {
+                    ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
+                        Text(mode.rawValue).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section("OpenAI") {
                 SecureField("API Key", text: $appState.openAIKey)
                     .textFieldStyle(.roundedBorder)
@@ -30,18 +39,18 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 430)
+        .frame(width: 450, height: 500)
     }
 
     @ViewBuilder
     private func statusLabel(for key: String, purpose: String) -> some View {
         if key.isEmpty {
             Label("Required for \(purpose)", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color(red: 0.85, green: 0.45, blue: 0.10))
                 .font(.caption)
         } else {
             Label("API key saved", systemImage: "checkmark.circle")
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.onAccent)
                 .font(.caption)
         }
     }
@@ -50,11 +59,11 @@ struct SettingsView: View {
     private func bucketStatusLabel(for bucket: String) -> some View {
         if bucket.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Label("Required for audio upload & transcription", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color(red: 0.85, green: 0.45, blue: 0.10))
                 .font(.caption)
         } else {
             Label("Bucket name saved", systemImage: "checkmark.circle")
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.onAccent)
                 .font(.caption)
         }
     }
