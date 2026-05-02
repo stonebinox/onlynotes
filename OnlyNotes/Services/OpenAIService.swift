@@ -87,7 +87,7 @@ class OpenAIService {
             ["role": "system", "content": systemPrompt]
         ]
         for msg in messages {
-            apiMessages.append(["role": msg.role.rawValue, "content": msg.content])
+            apiMessages.append(["role": msg.role, "content": msg.content])
         }
 
         let payload: [String: Any] = [

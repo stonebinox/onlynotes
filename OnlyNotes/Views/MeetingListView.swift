@@ -1,12 +1,12 @@
 import SwiftUI
 
-struct MeetingListView: View {
+struct NoteListView: View {
     @EnvironmentObject var appState: AppState
-    @Binding var selectedMeeting: Meeting?
+    @Binding var selectedNote: Note?
     @State private var showingError = false
 
     var body: some View {
-        List(selection: $selectedMeeting) {
+        List(selection: $selectedNote) {
             Section {
                 recordButton
             }
@@ -30,14 +30,14 @@ struct MeetingListView: View {
                 }
             }
 
-            Section("Meetings") {
-                ForEach(appState.meetings) { meeting in
-                    NavigationLink(value: meeting) {
-                        MeetingRow(meeting: meeting)
+            Section("Notes") {
+                ForEach(appState.notes) { note in
+                    NavigationLink(value: note) {
+                        NoteRow(note: note)
                     }
                     .contextMenu {
                         Button("Delete", role: .destructive) {
-                            appState.deleteMeeting(meeting)
+                            appState.deleteNote(note)
                         }
                     }
                 }
@@ -45,6 +45,13 @@ struct MeetingListView: View {
         }
         .listStyle(.sidebar)
         .navigationTitle("OnlyNotes")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: createNewNote) {
+                    Image(systemName: "square.and.pencil")
+                }
+            }
+        }
         .alert("Transcription Error", isPresented: $showingError, presenting: appState.processingError) { _ in
             Button("OK", role: .cancel) {}
         } message: { error in
@@ -64,9 +71,9 @@ struct MeetingListView: View {
             Button {
                 appState.processingError = nil
                 if appState.recorder.isRecording {
-                    appState.stopAndProcess { meeting in
-                        selectedMeeting = meeting
-                    }
+                    appState.stopAndProcess(onNoteSaved: { note in
+                        selectedNote = note
+                    })
                 } else {
                     try? appState.startRecording()
                 }
@@ -127,6 +134,13 @@ struct MeetingListView: View {
         .padding(.vertical, 4)
     }
 
+    private func createNewNote() {
+        let newNote = Note(title: "", body: "", createdAt: Date(), updatedAt: Date())
+        appState.saveNote(newNote)
+        appState.loadNotes()
+        selectedNote = newNote
+    }
+
     private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
@@ -134,21 +148,46 @@ struct MeetingListView: View {
     }
 }
 
-struct MeetingRow: View {
-    let meeting: Meeting
+struct NoteRow: View {
+    let note: Note
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(meeting.title)
-                .fontWeight(.medium)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                Image(systemName: note.isMeetingNote ? "mic.fill" : "pencil")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(note.title.isEmpty ? "Untitled Note" : note.title)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            }
             HStack {
-                Text(meeting.date.formatted(date: .abbreviated, time: .shortened))
-                Text("·")
-                Text(formatDuration(meeting.duration))
+                Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
+                if note.isMeetingNote, let duration = note.meetingAttachment?.duration {
+                    Text("·")
+                    Text(formatDuration(duration))
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            if !note.tags.isEmpty {
+                HStack(spacing: 4) {
+                    let visibleTags = Array(note.tags.prefix(3))
+                    let extraCount = note.tags.count - visibleTags.count
+                    ForEach(visibleTags, id: \.self) { tag in
+                        Text(tag)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: Capsule())
+                    }
+                    if extraCount > 0 {
+                        Text("+\(extraCount) more")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .padding(.vertical, 2)
     }

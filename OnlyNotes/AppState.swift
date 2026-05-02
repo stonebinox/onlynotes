@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 
 class AppState: ObservableObject {
-    @Published var meetings: [Meeting] = []
+    @Published var notes: [Note] = []
     @Published var isProcessing = false
     @Published var processingError: String?
     @Published var liveNotes: [MeetingNote] = []
@@ -18,32 +18,32 @@ class AppState: ObservableObject {
     var isRecording: Bool { recorder.isRecording }
 
     init() {
+        NoteStore.shared.migrateIfNeeded()
+
+        if let err = NoteStore.shared.migrationError {
+            processingError = err
+        }
+
         recorder.onUnexpectedStop = { [weak self] in
             self?.processingError = "Recording stopped unexpectedly. Check your microphone."
         }
-        // Forward recorder @Published changes so views observing AppState update too
         recorder.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
 
-    func loadMeetings() {
-        meetings = MeetingStore.shared.loadAll()
+    func loadNotes() {
+        notes = NoteStore.shared.loadAll()
     }
 
-    func deleteMeeting(_ meeting: Meeting) {
-        MeetingStore.shared.delete(meeting)
-        loadMeetings()
+    func saveNote(_ note: Note) {
+        NoteStore.shared.save(note)
+        loadNotes()
     }
 
-    func saveMeeting(_ meeting: Meeting) {
-        MeetingStore.shared.save(meeting)
-        loadMeetings()
-    }
-
-    func startRecording() throws {
-        processingError = nil
-        try recorder.startRecording()
+    func deleteNote(_ note: Note) {
+        NoteStore.shared.delete(note)
+        loadNotes()
     }
 
     func addLiveNote() {
@@ -54,7 +54,12 @@ class AppState: ObservableObject {
         liveNoteDraft = ""
     }
 
-    func stopAndProcess(onMeetingSaved: ((Meeting) -> Void)? = nil) {
+    func startRecording() throws {
+        processingError = nil
+        try recorder.startRecording()
+    }
+
+    func stopAndProcess(onNoteSaved: ((Note) -> Void)? = nil) {
         guard let result = recorder.stopRecording() else { return }
         isProcessing = true
         let capturedNotes = liveNotes
@@ -74,37 +79,46 @@ class AppState: ObservableObject {
                 let segments = try await speechService.transcribe(audioURL: result.url, bucket: bucket)
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:], notes: capturedNotes)
 
-                var meeting = Meeting(
-                    title: summary.title,
-                    date: Date(),
-                    duration: result.duration,
+                let attachment = MeetingAttachment(
                     segments: segments,
                     summary: summary.summary,
                     actionItems: summary.actionItems,
-                    audioFilePath: result.url.path
+                    duration: result.duration,
+                    audioFilePath: result.url.path,
+                    notes: capturedNotes
                 )
-                meeting.notes = capturedNotes
-                MeetingStore.shared.save(meeting)
+                let note = Note(
+                    title: summary.title,
+                    createdAt: Date(),
+                    updatedAt: Date(),
+                    meetingAttachment: attachment
+                )
+
+                NoteStore.shared.save(note)
 
                 await MainActor.run {
-                    self.loadMeetings()
+                    self.loadNotes()
                     self.isProcessing = false
                     self.liveNotes = []
                     self.liveNoteDraft = ""
-                    onMeetingSaved?(meeting)
+                    onNoteSaved?(note)
                 }
             } catch {
-                var meeting = Meeting(
-                    title: "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))",
-                    date: Date(),
+                let attachment = MeetingAttachment(
                     duration: result.duration,
-                    audioFilePath: result.url.path
+                    audioFilePath: result.url.path,
+                    notes: capturedNotes
                 )
-                meeting.notes = capturedNotes
-                MeetingStore.shared.save(meeting)
+                let note = Note(
+                    title: "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))",
+                    createdAt: Date(),
+                    updatedAt: Date(),
+                    meetingAttachment: attachment
+                )
+                NoteStore.shared.save(note)
 
                 await MainActor.run {
-                    self.loadMeetings()
+                    self.loadNotes()
                     self.processingError = error.localizedDescription
                     self.isProcessing = false
                     self.liveNotes = []

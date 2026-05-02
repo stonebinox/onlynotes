@@ -3,28 +3,31 @@ import AVFoundation
 
 struct MeetingDetailView: View {
     @EnvironmentObject var appState: AppState
-    @State var meeting: Meeting
+    @State var note: Note
     @State private var selectedTab = 0
     @State private var isRegenerating = false
     @State private var editingNoteID: UUID? = nil
     @State private var editingNoteDraft: String = ""
+    @State private var tagDraft: String = ""
+
+    private var attachment: MeetingAttachment? { note.meetingAttachment }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             VStack(alignment: .leading, spacing: 8) {
-                Text(meeting.title)
+                Text(note.title.isEmpty ? "Untitled Note" : note.title)
                     .font(.title)
                     .fontWeight(.bold)
 
                 HStack(spacing: 16) {
-                    Label(meeting.date.formatted(date: .long, time: .shortened), systemImage: "calendar")
-                    Label(formatDuration(meeting.duration), systemImage: "clock")
-                    if !meeting.segments.isEmpty {
+                    Label(note.createdAt.formatted(date: .long, time: .shortened), systemImage: "calendar")
+                    Label(formatDuration(attachment?.duration ?? 0), systemImage: "clock")
+                    if !(attachment?.segments.isEmpty ?? true) {
                         Label("\(speakerCount) speakers", systemImage: "person.2")
                     }
                     Spacer()
-                    Button(action: exportMeeting) {
+                    Button(action: exportNote) {
                         Label("Export", systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(.bordered)
@@ -32,7 +35,9 @@ struct MeetingDetailView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-                if let path = meeting.audioFilePath {
+                tagEditor
+
+                if let path = attachment?.audioFilePath {
                     AudioPlayerBar(url: URL(fileURLWithPath: path))
                 }
             }
@@ -70,25 +75,79 @@ struct MeetingDetailView: View {
         .textSelection(.enabled)
     }
 
+    // MARK: - Tag Editor
+
+    private var tagEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(note.tags, id: \.self) { tag in
+                        HStack(spacing: 3) {
+                            Text(tag)
+                                .font(.caption)
+                            Button(action: { removeTag(tag) }) {
+                                Image(systemName: "xmark")
+                                    .font(.caption2)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.quaternary, in: Capsule())
+                    }
+
+                    TextField("Add tag...", text: $tagDraft)
+                        .font(.caption)
+                        .textFieldStyle(.plain)
+                        .frame(width: 80)
+                        .onSubmit { commitTag() }
+                        .onChange(of: tagDraft) { _, new in
+                            if new.hasSuffix(",") {
+                                tagDraft = String(new.dropLast())
+                                commitTag()
+                            }
+                        }
+                }
+            }
+        }
+    }
+
+    private func commitTag() {
+        let trimmed = tagDraft.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { tagDraft = ""; return }
+        var updated = note
+        updated.setTags(note.tags + [trimmed])
+        note = updated
+        appState.saveNote(updated)
+        tagDraft = ""
+    }
+
+    private func removeTag(_ tag: String) {
+        var updated = note
+        updated.setTags(note.tags.filter { $0 != tag })
+        note = updated
+        appState.saveNote(updated)
+    }
+
     // MARK: - Subviews
 
     @ViewBuilder
     private var summaryView: some View {
         if isRegenerating {
             HStack { ProgressView().controlSize(.small); Text("Regenerating summary…").foregroundStyle(.secondary) }
-        } else if meeting.summary.isEmpty {
+        } else if (attachment?.summary ?? "").isEmpty {
             Text("No summary available").foregroundStyle(.secondary).italic()
         } else {
-            Text(meeting.summary).lineSpacing(4)
+            Text(attachment?.summary ?? "").lineSpacing(4)
         }
     }
 
     @ViewBuilder
     private var actionItemsView: some View {
-        if meeting.actionItems.isEmpty {
+        if (attachment?.actionItems ?? []).isEmpty {
             Text("No action items").foregroundStyle(.secondary).italic()
         } else {
-            ForEach(meeting.actionItems, id: \.self) { item in
+            ForEach(attachment?.actionItems ?? [], id: \.self) { item in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "circle").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
                     Text(item)
@@ -99,7 +158,7 @@ struct MeetingDetailView: View {
 
     @ViewBuilder
     private var speakersView: some View {
-        if meeting.segments.isEmpty {
+        if (attachment?.segments ?? []).isEmpty {
             Text("No speaker data available").foregroundStyle(.secondary).italic()
         } else {
             VStack(alignment: .leading, spacing: 16) {
@@ -111,22 +170,22 @@ struct MeetingDetailView: View {
                     SpeakerRenameRow(
                         tag: tag,
                         name: Binding(
-                            get: { meeting.speakers[String(tag)] ?? "" },
+                            get: { note.meetingAttachment?.speakers[String(tag)] ?? "" },
                             set: { newName in
-                                var updated = meeting
+                                var updated = note
                                 if newName.isEmpty {
-                                    updated.speakers.removeValue(forKey: String(tag))
+                                    updated.meetingAttachment?.speakers.removeValue(forKey: String(tag))
                                 } else {
-                                    updated.speakers[String(tag)] = newName
+                                    updated.meetingAttachment?.speakers[String(tag)] = newName
                                 }
-                                meeting = updated
-                                appState.saveMeeting(updated)
+                                note = updated
+                                appState.saveNote(updated)
                             }
                         )
                     )
                 }
 
-                if !meeting.speakers.isEmpty {
+                if !(attachment?.speakers ?? [:]).isEmpty {
                     Button("Regenerate Summary with Speaker Names") {
                         regenerateSummary()
                     }
@@ -139,12 +198,12 @@ struct MeetingDetailView: View {
 
     @ViewBuilder
     private var transcriptView: some View {
-        if meeting.segments.isEmpty {
+        if (attachment?.segments ?? []).isEmpty {
             Text("No transcript available").foregroundStyle(.secondary).italic()
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(meeting.segments) { segment in
-                    TranscriptSegmentRow(segment: segment, speakers: meeting.speakers)
+                ForEach(attachment?.segments ?? []) { segment in
+                    TranscriptSegmentRow(segment: segment, speakers: attachment?.speakers ?? [:])
                 }
             }
         }
@@ -152,20 +211,20 @@ struct MeetingDetailView: View {
 
     @ViewBuilder
     private var chatView: some View {
-        MeetingChatView(meeting: $meeting)
+        MeetingChatView(note: $note)
     }
 
     private var notesTab: some View {
         Group {
-            if meeting.notes.isEmpty {
+            if (attachment?.notes ?? []).isEmpty {
                 Text("No notes were captured during this recording.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(meeting.notes) { note in
-                            noteRow(for: note)
+                        ForEach(attachment?.notes ?? []) { meetingNote in
+                            noteRow(for: meetingNote)
                             Divider()
                                 .padding(.leading)
                         }
@@ -176,23 +235,23 @@ struct MeetingDetailView: View {
     }
 
     @ViewBuilder
-    private func noteRow(for note: MeetingNote) -> some View {
+    private func noteRow(for meetingNote: MeetingNote) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Text(note.formattedTimestamp)
+            Text(meetingNote.formattedTimestamp)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .frame(width: 40, alignment: .leading)
-                .padding(.top, editingNoteID == note.id ? 6 : 0)
+                .padding(.top, editingNoteID == meetingNote.id ? 6 : 0)
 
-            if editingNoteID == note.id {
+            if editingNoteID == meetingNote.id {
                 // Editing mode
                 TextField("Note", text: $editingNoteDraft)
                     .textFieldStyle(.roundedBorder)
                     .font(.subheadline)
-                    .onSubmit { commitNoteEdit(id: note.id) }
+                    .onSubmit { commitNoteEdit(id: meetingNote.id) }
 
-                Button(action: { commitNoteEdit(id: note.id) }) {
+                Button(action: { commitNoteEdit(id: meetingNote.id) }) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                 }
@@ -206,20 +265,20 @@ struct MeetingDetailView: View {
                 .buttonStyle(.plain)
             } else {
                 // Display mode
-                Text(note.text)
+                Text(meetingNote.text)
                     .font(.subheadline)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onTapGesture { beginNoteEdit(note) }
+                    .onTapGesture { beginNoteEdit(meetingNote) }
 
                 HStack(spacing: 8) {
-                    Button(action: { beginNoteEdit(note) }) {
+                    Button(action: { beginNoteEdit(meetingNote) }) {
                         Image(systemName: "pencil")
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
 
-                    Button(action: { deleteNote(id: note.id) }) {
+                    Button(action: { deleteMeetingNote(id: meetingNote.id) }) {
                         Image(systemName: "trash")
                             .foregroundStyle(.red.opacity(0.7))
                     }
@@ -230,15 +289,15 @@ struct MeetingDetailView: View {
         .padding(.horizontal)
         .padding(.vertical, 6)
         .contextMenu {
-            Button("Edit") { beginNoteEdit(note) }
+            Button("Edit") { beginNoteEdit(meetingNote) }
             Divider()
-            Button("Delete", role: .destructive) { deleteNote(id: note.id) }
+            Button("Delete", role: .destructive) { deleteMeetingNote(id: meetingNote.id) }
         }
     }
 
-    private func beginNoteEdit(_ note: MeetingNote) {
-        editingNoteID = note.id
-        editingNoteDraft = note.text
+    private func beginNoteEdit(_ meetingNote: MeetingNote) {
+        editingNoteID = meetingNote.id
+        editingNoteDraft = meetingNote.text
     }
 
     private func cancelNoteEdit() {
@@ -252,21 +311,21 @@ struct MeetingDetailView: View {
             cancelNoteEdit()
             return
         }
-        var updated = meeting
-        if let idx = updated.notes.firstIndex(where: { $0.id == id }) {
-            updated.notes[idx].text = trimmed
+        var updated = note
+        if let idx = updated.meetingAttachment?.notes.firstIndex(where: { $0.id == id }) {
+            updated.meetingAttachment?.notes[idx].text = trimmed
         }
-        meeting = updated
-        appState.saveMeeting(updated)
+        note = updated
+        appState.saveNote(updated)
         editingNoteID = nil
         editingNoteDraft = ""
     }
 
-    private func deleteNote(id: UUID) {
-        var updated = meeting
-        updated.notes.removeAll { $0.id == id }
-        meeting = updated
-        appState.saveMeeting(updated)
+    private func deleteMeetingNote(id: UUID) {
+        var updated = note
+        updated.meetingAttachment?.notes.removeAll { $0.id == id }
+        note = updated
+        appState.saveNote(updated)
         if editingNoteID == id {
             editingNoteID = nil
             editingNoteDraft = ""
@@ -276,7 +335,7 @@ struct MeetingDetailView: View {
     // MARK: - Helpers
 
     private var uniqueSpeakerTags: [Int] {
-        Array(Set(meeting.segments.map(\.speakerTag))).sorted()
+        Array(Set((attachment?.segments ?? []).map(\.speakerTag))).sorted()
     }
 
     private var speakerCount: Int {
@@ -288,13 +347,17 @@ struct MeetingDetailView: View {
         Task {
             do {
                 let service = OpenAIService(apiKey: appState.openAIKey)
-                let result = try await service.summarize(segments: meeting.segments, speakers: meeting.speakers, notes: meeting.notes)
-                var updated = meeting
+                let result = try await service.summarize(
+                    segments: attachment?.segments ?? [],
+                    speakers: attachment?.speakers ?? [:],
+                    notes: attachment?.notes ?? []
+                )
+                var updated = note
                 updated.title = result.title
-                updated.summary = result.summary
-                updated.actionItems = result.actionItems
-                meeting = updated
-                appState.saveMeeting(updated)
+                updated.meetingAttachment?.summary = result.summary
+                updated.meetingAttachment?.actionItems = result.actionItems
+                note = updated
+                appState.saveNote(updated)
             } catch {
                 print("Summary regeneration failed: \(error)")
             }
@@ -309,10 +372,10 @@ struct MeetingDetailView: View {
         return "\(minutes)m \(seconds)s"
     }
 
-    private func exportMeeting() {
+    private func exportNote() {
         let panel = NSSavePanel()
         panel.title = "Export Meeting Notes"
-        panel.nameFieldStringValue = "\(meeting.title).md"
+        panel.nameFieldStringValue = "\(note.title.isEmpty ? "Untitled Note" : note.title).md"
         panel.allowedContentTypes = [.plainText]
 
         if panel.runModal() == .OK, let url = panel.url {
@@ -323,42 +386,45 @@ struct MeetingDetailView: View {
 
     private func buildMarkdown() -> String {
         var lines: [String] = []
-        lines.append("# \(meeting.title)")
+        lines.append("# \(note.title.isEmpty ? "Untitled Note" : note.title)")
         lines.append("")
-        lines.append("**Date:** \(meeting.date.formatted(date: .long, time: .shortened))")
-        lines.append("**Duration:** \(formatDuration(meeting.duration))")
+        lines.append("**Date:** \(note.createdAt.formatted(date: .long, time: .shortened))")
+        if let dur = attachment?.duration {
+            lines.append("**Duration:** \(formatDuration(dur))")
+        }
         lines.append("")
 
-        if !meeting.summary.isEmpty {
+        if let summary = attachment?.summary, !summary.isEmpty {
             lines.append("## Summary")
             lines.append("")
-            lines.append(meeting.summary)
+            lines.append(summary)
             lines.append("")
         }
 
-        if !meeting.actionItems.isEmpty {
+        if let items = attachment?.actionItems, !items.isEmpty {
             lines.append("## Action Items")
             lines.append("")
-            for item in meeting.actionItems {
+            for item in items {
                 lines.append("- \(item)")
             }
             lines.append("")
         }
 
-        if !meeting.notes.isEmpty {
+        if let meetingNotes = attachment?.notes, !meetingNotes.isEmpty {
             lines.append("## Notes")
             lines.append("")
-            for note in meeting.notes {
-                lines.append("\(note.formattedTimestamp) - \(note.text)")
+            for mn in meetingNotes {
+                lines.append("\(mn.formattedTimestamp) - \(mn.text)")
             }
             lines.append("")
         }
 
-        if !meeting.segments.isEmpty {
+        if let segments = attachment?.segments, !segments.isEmpty {
+            let speakers = attachment?.speakers ?? [:]
             lines.append("## Transcript")
             lines.append("")
-            for segment in meeting.segments {
-                let name = meeting.speakers[String(segment.speakerTag)] ?? "Speaker \(segment.speakerTag)"
+            for segment in segments {
+                let name = speakers[String(segment.speakerTag)] ?? "Speaker \(segment.speakerTag)"
                 lines.append("**\(name):** \(segment.text)")
                 lines.append("")
             }
@@ -421,13 +487,17 @@ struct TranscriptSegmentRow: View {
 
 struct MeetingChatView: View {
     @EnvironmentObject var appState: AppState
-    @Binding var meeting: Meeting
+    @Binding var note: Note
     @State private var inputText = ""
     @State private var isSending = false
 
+    private var chatMessages: [ChatMessage] {
+        note.meetingAttachment?.chatMessages ?? []
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if meeting.chatMessages.isEmpty {
+            if chatMessages.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "bubble.left.and.bubble.right")
                         .font(.system(size: 36))
@@ -444,7 +514,7 @@ struct MeetingChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(meeting.chatMessages) { msg in
+                            ForEach(chatMessages) { msg in
                                 ChatBubble(message: msg)
                                     .id(msg.id)
                             }
@@ -458,8 +528,8 @@ struct MeetingChatView: View {
                         }
                         .padding()
                     }
-                    .onChange(of: meeting.chatMessages.count) { _, _ in
-                        proxy.scrollTo(meeting.chatMessages.last?.id)
+                    .onChange(of: chatMessages.count) { _, _ in
+                        proxy.scrollTo(chatMessages.last?.id)
                     }
                 }
             }
@@ -486,29 +556,30 @@ struct MeetingChatView: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending else { return }
 
-        let userMsg = ChatMessage(role: .user, content: text)
-        var updated = meeting
-        updated.chatMessages.append(userMsg)
-        meeting = updated
-        appState.saveMeeting(updated)
+        let userMsg = ChatMessage(role: "user", content: text)
+        var updated = note
+        updated.meetingAttachment?.chatMessages.append(userMsg)
+        note = updated
+        appState.saveNote(updated)
         inputText = ""
         isSending = true
 
         Task {
             do {
                 let service = OpenAIService(apiKey: appState.openAIKey)
-                let transcript = meeting.transcript(resolvingNames: true)
-                let reply = try await service.chat(messages: updated.chatMessages, transcript: transcript)
+                let transcript = note.meetingAttachment?.transcript(resolvingNames: true) ?? ""
+                let currentMessages = note.meetingAttachment?.chatMessages ?? []
+                let reply = try await service.chat(messages: currentMessages, transcript: transcript)
 
-                var final = meeting
-                final.chatMessages.append(ChatMessage(role: .assistant, content: reply))
-                meeting = final
-                appState.saveMeeting(final)
+                var final = note
+                final.meetingAttachment?.chatMessages.append(ChatMessage(role: "assistant", content: reply))
+                note = final
+                appState.saveNote(final)
             } catch {
-                var final = meeting
-                final.chatMessages.append(ChatMessage(role: .assistant, content: "Sorry, something went wrong: \(error.localizedDescription)"))
-                meeting = final
-                appState.saveMeeting(final)
+                var final = note
+                final.meetingAttachment?.chatMessages.append(ChatMessage(role: "assistant", content: "Sorry, something went wrong: \(error.localizedDescription)"))
+                note = final
+                appState.saveNote(final)
             }
             isSending = false
         }
@@ -606,14 +677,14 @@ struct ChatBubble: View {
 
     var body: some View {
         HStack {
-            if message.role == .user { Spacer(minLength: 60) }
+            if message.role == "user" { Spacer(minLength: 60) }
             Text(message.content)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(message.role == .user ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-                .foregroundStyle(message.role == .user ? .white : .primary)
+                .background(message.role == "user" ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+                .foregroundStyle(message.role == "user" ? .white : .primary)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-            if message.role == .assistant { Spacer(minLength: 60) }
+            if message.role == "assistant" { Spacer(minLength: 60) }
         }
     }
 }
