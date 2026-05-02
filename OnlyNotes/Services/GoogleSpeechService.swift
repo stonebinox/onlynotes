@@ -81,7 +81,6 @@ class GoogleSpeechService {
                 "sampleRateHertz": sampleRate,
                 "languageCode": "en-US",
                 "alternativeLanguageCodes": ["kn-IN", "ta-IN"],
-                "enableSpeakerDiarization": true,
                 "diarizationConfig": [
                     "enableSpeakerDiarization": true,
                     "minSpeakerCount": 1,

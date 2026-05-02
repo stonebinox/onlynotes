@@ -2,10 +2,8 @@ import SwiftUI
 
 struct MeetingListView: View {
     @EnvironmentObject var appState: AppState
-    @StateObject private var recorder = AudioRecorder()
     @Binding var selectedMeeting: Meeting?
-    @State private var isProcessing = false
-    @State private var processingError: String?
+    @State private var showingError = false
 
     var body: some View {
         List(selection: $selectedMeeting) {
@@ -13,11 +11,16 @@ struct MeetingListView: View {
                 recordButton
             }
 
-            if let error = processingError {
+            if appState.processingError != nil {
                 Section {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                        .font(.caption)
+                    Button {
+                        showingError = true
+                    } label: {
+                        Label("Transcription failed — tap for details", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -36,17 +39,16 @@ struct MeetingListView: View {
         }
         .listStyle(.sidebar)
         .navigationTitle("OnlyNotes")
-        .onAppear {
-            recorder.onUnexpectedStop = {
-                appState.isRecording = false
-                processingError = "Recording stopped unexpectedly. Check your microphone."
-            }
+        .alert("Transcription Error", isPresented: $showingError, presenting: appState.processingError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { error in
+            Text(error)
         }
     }
 
     @ViewBuilder
     private var recordButton: some View {
-        if isProcessing {
+        if appState.isProcessing {
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Transcribing…").foregroundStyle(.secondary)
@@ -54,22 +56,24 @@ struct MeetingListView: View {
             .padding(.vertical, 4)
         } else {
             Button {
-                processingError = nil
-                if recorder.isRecording {
-                    stopAndProcess()
+                appState.processingError = nil
+                if appState.recorder.isRecording {
+                    appState.stopAndProcess { meeting in
+                        selectedMeeting = meeting
+                    }
                 } else {
-                    startRecording()
+                    try? appState.startRecording()
                 }
             } label: {
                 HStack {
-                    Image(systemName: recorder.isRecording ? "stop.circle.fill" : "record.circle")
-                        .foregroundStyle(recorder.isRecording ? .red : .accentColor)
+                    Image(systemName: appState.recorder.isRecording ? "stop.circle.fill" : "record.circle")
+                        .foregroundStyle(appState.recorder.isRecording ? .red : .accentColor)
                         .font(.title2)
                     VStack(alignment: .leading) {
-                        Text(recorder.isRecording ? "Stop Recording" : "Start Recording")
+                        Text(appState.recorder.isRecording ? "Stop Recording" : "Start Recording")
                             .fontWeight(.medium)
-                        if recorder.isRecording {
-                            Text(formatTime(recorder.elapsedTime))
+                        if appState.recorder.isRecording {
+                            Text(formatTime(appState.recorder.elapsedTime))
                                 .font(.caption)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
@@ -79,64 +83,6 @@ struct MeetingListView: View {
                 .padding(.vertical, 4)
             }
             .buttonStyle(.plain)
-        }
-    }
-
-    private func startRecording() {
-        do {
-            try recorder.startRecording()
-            appState.isRecording = true
-        } catch {
-            processingError = error.localizedDescription
-        }
-    }
-
-    private func stopAndProcess() {
-        guard let result = recorder.stopRecording() else { return }
-        appState.isRecording = false
-        isProcessing = true
-
-        Task {
-            do {
-                let speechService = GoogleSpeechService(apiKey: appState.googleAPIKey)
-                let openAIService = OpenAIService(apiKey: appState.openAIKey)
-
-                let segments = try await speechService.transcribe(audioURL: result.url)
-                let summary = try await openAIService.summarize(segments: segments, speakers: [:])
-
-                let meeting = Meeting(
-                    title: summary.title,
-                    date: Date(),
-                    duration: result.duration,
-                    segments: segments,
-                    summary: summary.summary,
-                    actionItems: summary.actionItems,
-                    audioFilePath: result.url.path
-                )
-
-                MeetingStore.shared.save(meeting)
-
-                await MainActor.run {
-                    appState.loadMeetings()
-                    selectedMeeting = meeting
-                    isProcessing = false
-                }
-            } catch {
-                // Save with raw segments even if summarization fails
-                let meeting = Meeting(
-                    title: "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))",
-                    date: Date(),
-                    duration: result.duration,
-                    audioFilePath: result.url.path
-                )
-                MeetingStore.shared.save(meeting)
-
-                await MainActor.run {
-                    appState.loadMeetings()
-                    processingError = error.localizedDescription
-                    isProcessing = false
-                }
-            }
         }
     }
 
