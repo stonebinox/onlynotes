@@ -22,9 +22,15 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                 bucketStatusLabel(for: appState.googleBucketName)
             }
+
+            Section("Brave Search") {
+                SecureField("API Key", text: $appState.braveSearchAPIKey)
+                    .textFieldStyle(.roundedBorder)
+                statusLabel(for: appState.braveSearchAPIKey, purpose: "web context in notes")
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 340)
+        .frame(width: 450, height: 430)
     }
 
     @ViewBuilder

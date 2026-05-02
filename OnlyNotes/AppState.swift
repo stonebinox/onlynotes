@@ -11,6 +11,7 @@ class AppState: ObservableObject {
     @AppStorage("openAIKey") var openAIKey: String = ""
     @AppStorage("googleAPIKey") var googleAPIKey: String = ""
     @AppStorage("googleBucketName") var googleBucketName: String = ""
+    @AppStorage("braveSearchAPIKey") var braveSearchAPIKey: String = ""
 
     let recorder = AudioRecorder()
     private var cancellables = Set<AnyCancellable>()
