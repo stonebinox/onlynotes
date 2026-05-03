@@ -182,15 +182,28 @@ struct MeetingDetailView: View {
                             get: { note.meetingAttachment?.speakers[String(tag)] ?? "" },
                             set: { newName in
                                 var updated = note
-                                if newName.isEmpty {
+                                let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if trimmed.isEmpty {
                                     updated.meetingAttachment?.speakers.removeValue(forKey: String(tag))
                                 } else {
                                     updated.meetingAttachment?.speakers[String(tag)] = newName
                                 }
                                 note = updated
-                                appState.saveNote(updated)
+                                // Disk save is deferred to onCommit
                             }
-                        )
+                        ),
+                        onCommit: {
+                            var updated = note
+                            let trimmed = (updated.meetingAttachment?.speakers[String(tag)] ?? "")
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            if trimmed.isEmpty {
+                                updated.meetingAttachment?.speakers.removeValue(forKey: String(tag))
+                            } else {
+                                updated.meetingAttachment?.speakers[String(tag)] = trimmed
+                            }
+                            note = updated
+                            appState.saveNote(updated)
+                        }
                     )
                 }
 
@@ -201,6 +214,9 @@ struct MeetingDetailView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(isRegenerating)
                 }
+            }
+            .onDisappear {
+                appState.saveNote(note)
             }
         }
     }
@@ -469,7 +485,7 @@ struct MeetingDetailView: View {
 struct SpeakerRenameRow: View {
     let tag: Int
     @Binding var name: String
-    @State private var editingName: String = ""
+    let onCommit: () -> Void
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -478,14 +494,13 @@ struct SpeakerRenameRow: View {
                 .frame(width: 80, alignment: .leading)
                 .foregroundStyle(.secondary)
             Image(systemName: "arrow.right").foregroundStyle(.secondary)
-            TextField("Enter name…", text: $editingName)
+            TextField("Enter name…", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($isFocused)
-                .onAppear { editingName = name }
+                .onSubmit { onCommit() }
                 .onChange(of: isFocused) { _, focused in
-                    if !focused { name = editingName }
+                    if !focused { onCommit() }
                 }
-                .onSubmit { name = editingName }
         }
     }
 }
