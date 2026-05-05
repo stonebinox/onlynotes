@@ -244,6 +244,7 @@ struct NoteEditorView: View {
         note = updated
         appState.saveNote(updated)
         tagDraft = ""
+        refreshContext(query: buildQuery())
     }
 
     private func removeTag(_ tag: String) {
@@ -251,6 +252,7 @@ struct NoteEditorView: View {
         updated.setTags(note.tags.filter { $0 != tag })
         note = updated
         appState.saveNote(updated)
+        refreshContext(query: buildQuery())
     }
 
     private func scheduleContextRefresh(body: String) {
@@ -282,40 +284,39 @@ struct NoteEditorView: View {
     }
 
     private func refreshContext(query: String) {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let hasTags = !note.tags.isEmpty
+        let hasQuery = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasTags || hasQuery else {
+            internalContextResults = []
+            webContextResults = []
+            return
+        }
+
         contextTask?.cancel()
         contextTask = Task {
             await MainActor.run { isLoadingContext = true; contextError = nil }
 
             let notes = appState.notes
-            let openAIKey = appState.openAIKey
             let braveKey = appState.braveSearchAPIKey
             let currentTags = note.tags
             let currentID = note.id
 
             async let tagResults: [ContextResult] = Task.detached { @Sendable in
-                EmbeddingService.shared.findByTags(currentTags, among: notes, excludingID: currentID)
+                hasTags ? EmbeddingService.shared.findByTags(currentTags, among: notes, excludingID: currentID) : []
             }.value
-            async let semanticResults = EmbeddingService.shared.findSimilar(to: query, among: notes, apiKey: openAIKey)
-            async let webFetch = BraveSearchService().search(query: query, apiKey: braveKey)
+            async let webFetch: [ContextResult] = hasQuery
+                ? BraveSearchService().search(query: query, apiKey: braveKey)
+                : []
 
-            let (tags, semantic, webResult) = await (tagResults, semanticResults, webFetch)
+            let (tags, webResult) = await (tagResults, webFetch)
 
             if Task.isCancelled {
                 await MainActor.run { isLoadingContext = false }
                 return
             }
 
-            var seen = Set<UUID>()
-            var internalResults: [ContextResult] = []
-            for r in tags + semantic {
-                if case .internalNote(let id) = r.source, seen.insert(id).inserted {
-                    internalResults.append(r)
-                }
-            }
-
             await MainActor.run {
-                self.internalContextResults = internalResults
+                self.internalContextResults = hasTags ? tags : []
                 self.webContextResults = webResult
                 self.isLoadingContext = false
             }
