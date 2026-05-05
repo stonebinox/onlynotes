@@ -3,33 +3,45 @@ import Foundation
 import ScreenCaptureKit
 import UserNotifications
 
+struct RecordingResult {
+    let systemURL: URL
+    let micURL: URL?
+    let duration: TimeInterval
+}
+
 class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutput {
     @Published var isRecording = false
     @Published var elapsedTime: TimeInterval = 0
 
     var currentFilePath: String?
+    var micFilePath: String?
     var onUnexpectedStop: ((String?) -> Void)?
 
     // MARK: - Private state
 
     private var stream: SCStream?
-    private var audioFile: AVAudioFile?
+    private var systemAudioFile: AVAudioFile?
+    private var micAudioFile: AVAudioFile?
     private var timer: Timer?
     private var startTime: Date?
     private let writeLock = NSLock()
-    private let mixLock = NSLock()
-    private var systemMixBuffer: [Float] = []
-    private var micMixBuffer: [Float] = []
-    private let mixChunkFrames = 4800  // 0.3s at 16kHz
 
     // MARK: - Public API
 
     func startRecording() throws {
-        let fileURL = Self.newRecordingURL()
-        currentFilePath = fileURL.path
+        let systemURL = Self.newRecordingURL()
+        let micURL = URL(fileURLWithPath: systemURL.deletingPathExtension().path + "_mic.wav")
+        currentFilePath = systemURL.path
+        micFilePath = micURL.path
 
-        audioFile = try AVAudioFile(
-            forWriting: fileURL,
+        systemAudioFile = try AVAudioFile(
+            forWriting: systemURL,
+            settings: Self.wavSettings(sampleRate: 16000),
+            commonFormat: .pcmFormatInt16,
+            interleaved: true
+        )
+        micAudioFile = try AVAudioFile(
+            forWriting: micURL,
             settings: Self.wavSettings(sampleRate: 16000),
             commonFormat: .pcmFormatInt16,
             interleaved: true
@@ -54,11 +66,15 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
         }
     }
 
-    func stopRecording() -> (url: URL, duration: TimeInterval)? {
+    func stopRecording() -> RecordingResult? {
         let duration = elapsedTime
         teardown()
-        guard let path = currentFilePath else { return nil }
-        return (URL(fileURLWithPath: path), duration)
+        guard let systemPath = currentFilePath else { return nil }
+        return RecordingResult(
+            systemURL: URL(fileURLWithPath: systemPath),
+            micURL: micFilePath.map { URL(fileURLWithPath: $0) },
+            duration: duration
+        )
     }
 
     // MARK: - SCStream Setup
@@ -165,51 +181,23 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
         guard let channelData = floatBuffer.floatChannelData?[0] else { return }
         let samples = Array(UnsafeBufferPointer(start: channelData, count: Int(floatBuffer.frameLength)))
 
-        mixLock.lock()
-        if isMic {
-            micMixBuffer.append(contentsOf: samples)
-        } else {
-            systemMixBuffer.append(contentsOf: samples)
-        }
-        let canFlush = systemMixBuffer.count >= mixChunkFrames || micMixBuffer.count >= mixChunkFrames
-        mixLock.unlock()
-
-        if canFlush { flushMixBuffer() }
-    }
-
-    private func flushMixBuffer() {
-        mixLock.lock()
-        let count = max(systemMixBuffer.count, micMixBuffer.count)
-        guard count > 0 else { mixLock.unlock(); return }
-        var mixed = [Float](repeating: 0, count: count)
-        for i in 0 ..< count {
-            let s = i < systemMixBuffer.count ? systemMixBuffer[i] : 0
-            let m = i < micMixBuffer.count ? micMixBuffer[i] : 0
-            mixed[i] = s + m
-        }
-        // Peak normalize to 0.9 to avoid clipping
-        let peak = mixed.map { abs($0) }.max() ?? 0
-        if peak > 0.001 {
-            let gain = min(0.9 / peak, 4.0)  // cap gain at 4x to avoid amplifying silence
-            for i in 0 ..< count { mixed[i] = max(-1.0, min(1.0, mixed[i] * gain)) }
-        }
-        systemMixBuffer.removeAll(keepingCapacity: true)
-        micMixBuffer.removeAll(keepingCapacity: true)
-        mixLock.unlock()
-
-        // Convert Float32 → Int16 and write
+        // Convert Float32 samples → Int16 AVAudioPCMBuffer
         guard let int16Format = AVAudioFormat(commonFormat: .pcmFormatInt16,
                                               sampleRate: 16000, channels: 1, interleaved: true),
-              let outBuffer = AVAudioPCMBuffer(pcmFormat: int16Format, frameCapacity: AVAudioFrameCount(mixed.count))
+              let outBuffer = AVAudioPCMBuffer(pcmFormat: int16Format, frameCapacity: AVAudioFrameCount(samples.count))
         else { return }
-        outBuffer.frameLength = AVAudioFrameCount(mixed.count)
+        outBuffer.frameLength = AVAudioFrameCount(samples.count)
         if let ptr = outBuffer.int16ChannelData?[0] {
-            for (i, sample) in mixed.enumerated() {
+            for (i, sample) in samples.enumerated() {
                 ptr[i] = Int16(max(Float(Int16.min), min(Float(Int16.max), sample * Float(Int16.max))))
             }
         }
         writeLock.lock()
-        try? audioFile?.write(from: outBuffer)
+        if isMic {
+            try? micAudioFile?.write(from: outBuffer)
+        } else {
+            try? systemAudioFile?.write(from: outBuffer)
+        }
         writeLock.unlock()
     }
 
@@ -219,14 +207,10 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
         let s = stream
         stream = nil
         Task { try? await s?.stopCapture() }
-        flushMixBuffer()  // flush remaining buffered samples
         writeLock.lock()
-        audioFile = nil
+        systemAudioFile = nil
+        micAudioFile = nil
         writeLock.unlock()
-        mixLock.lock()
-        systemMixBuffer.removeAll()
-        micMixBuffer.removeAll()
-        mixLock.unlock()
         timer?.invalidate()
         timer = nil
         isRecording = false

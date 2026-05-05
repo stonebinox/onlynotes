@@ -51,6 +51,57 @@ class WhisperTranscriptionService {
         return withSpeakers
     }
 
+    func transcribe(systemURL: URL, micURL: URL?) async throws -> [TranscriptSegment] {
+        // Transcribe system audio → Speaker 2
+        let systemChunks = try splitAudio(url: systemURL)
+        var systemSegments: [TranscriptSegment] = []
+        for chunk in systemChunks {
+            if let raw = try? await transcribeChunk(url: chunk.url, offset: chunk.startTime) {
+                systemSegments.append(contentsOf: raw)
+            }
+        }
+        for chunk in systemChunks where chunk.url != systemURL {
+            try? FileManager.default.removeItem(at: chunk.url)
+        }
+        systemSegments = dedupeOverlap(tagged(systemSegments, speakerTag: 2))
+
+        // Transcribe mic audio → Speaker 1 (if available)
+        var micSegments: [TranscriptSegment] = []
+        if let micURL = micURL,
+           FileManager.default.fileExists(atPath: micURL.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
+           (attrs[.size] as? Int ?? 0) > 4096 {
+            let micChunks = try splitAudio(url: micURL)
+            for chunk in micChunks {
+                if let raw = try? await transcribeChunk(url: chunk.url, offset: chunk.startTime) {
+                    micSegments.append(contentsOf: raw)
+                }
+            }
+            for chunk in micChunks where chunk.url != micURL {
+                try? FileManager.default.removeItem(at: chunk.url)
+            }
+            micSegments = dedupeOverlap(tagged(micSegments, speakerTag: 1))
+        }
+
+        // Merge and sort
+        let merged = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
+
+        // Fallback cases
+        if merged.isEmpty {
+            throw WhisperError.transcriptionFailed("All chunk transcriptions failed for both audio tracks.")
+        }
+
+        if systemSegments.isEmpty {
+            return micSegments
+        }
+
+        return merged
+    }
+
+    private func tagged(_ segments: [TranscriptSegment], speakerTag: Int) -> [TranscriptSegment] {
+        segments.map { var s = $0; s.speakerTag = speakerTag; return s }
+    }
+
     // MARK: - Audio Splitting
 
     private struct AudioChunk {

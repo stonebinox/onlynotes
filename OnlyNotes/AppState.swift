@@ -95,7 +95,7 @@ class AppState: ObservableObject {
                 let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
                 let openAIService = OpenAIService(apiKey: openAIKey)
 
-                let segments = try await whisperService.transcribe(audioURL: result.url)
+                let segments = try await whisperService.transcribe(systemURL: result.systemURL, micURL: result.micURL)
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:], notes: capturedNotes)
 
                 let attachment = MeetingAttachment(
@@ -103,7 +103,7 @@ class AppState: ObservableObject {
                     summary: summary.summary,
                     actionItems: summary.actionItems,
                     duration: result.duration,
-                    audioFilePath: result.url.path,
+                    audioFilePath: result.systemURL.path,
                     notes: capturedNotes
                 )
                 let note = Note(
@@ -125,7 +125,7 @@ class AppState: ObservableObject {
             } catch {
                 let attachment = MeetingAttachment(
                     duration: result.duration,
-                    audioFilePath: result.url.path,
+                    audioFilePath: result.systemURL.path,
                     notes: capturedNotes
                 )
                 let note = Note(
