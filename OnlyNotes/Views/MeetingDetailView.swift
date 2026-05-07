@@ -535,23 +535,47 @@ struct MeetingChatView: View {
     @Binding var note: Note
     @State private var inputText = ""
     @State private var isSending = false
+    @State private var isRunningAction = false
 
     private var chatMessages: [ChatMessage] {
         note.meetingAttachment?.chatMessages ?? []
     }
 
+    private var isEmptyMeeting: Bool {
+        (note.meetingAttachment?.segments ?? []).isEmpty &&
+        note.meetingAttachment?.audioFilePath != nil
+    }
+
+    private var isBusy: Bool { isSending || isRunningAction }
+
     var body: some View {
         VStack(spacing: 0) {
             if chatMessages.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 12) {
                     Image(systemName: "bubble.left.and.bubble.right")
                         .font(.system(size: 36))
                         .foregroundStyle(.secondary)
-                    Text("Ask anything about this meeting")
-                        .foregroundStyle(.secondary)
-                    Text("e.g. \"What did we decide about the timeline?\"")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+
+                    if isEmptyMeeting {
+                        Text("Transcription failed for this meeting")
+                            .fontWeight(.medium)
+                        Text("You can recover it by retranscribing the audio.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Retranscribe this meeting") {
+                            sendText("Retranscribe this meeting")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isBusy)
+                    } else {
+                        Text("Ask anything about this meeting")
+                            .foregroundStyle(.secondary)
+                        Text("Or ask me to rename speakers, add tags, or regenerate the summary.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
@@ -570,10 +594,23 @@ struct MeetingChatView: View {
                                 }
                                 .padding(.leading, 4)
                             }
+                            if isRunningAction {
+                                HStack {
+                                    ProgressView().controlSize(.small)
+                                    Text("Processing…").foregroundStyle(.secondary)
+                                }
+                                .padding(.leading, 4)
+                            }
                         }
                         .padding()
                     }
                     .onChange(of: chatMessages.count) { _, _ in
+                        proxy.scrollTo(chatMessages.last?.id)
+                    }
+                    .onChange(of: isSending) { _, _ in
+                        proxy.scrollTo(chatMessages.last?.id)
+                    }
+                    .onChange(of: isRunningAction) { _, _ in
                         proxy.scrollTo(chatMessages.last?.id)
                     }
                 }
@@ -590,7 +627,7 @@ struct MeetingChatView: View {
                 Button(action: sendMessage) {
                     Image(systemName: "paperplane.fill")
                 }
-                .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
+                .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBusy)
                 .keyboardShortcut(.return, modifiers: .command)
             }
             .padding()
@@ -599,34 +636,83 @@ struct MeetingChatView: View {
 
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending else { return }
+        guard !text.isEmpty, !isBusy else { return }
+        inputText = ""
+        sendText(text)
+    }
+
+    private func sendText(_ text: String) {
+        guard !isBusy else { return }
 
         let userMsg = ChatMessage(role: "user", content: text)
         var updated = note
         updated.meetingAttachment?.chatMessages.append(userMsg)
         note = updated
         appState.saveNote(updated)
-        inputText = ""
         isSending = true
 
         Task {
             do {
                 let service = OpenAIService(apiKey: appState.openAIKey)
-                let transcript = note.meetingAttachment?.transcript(resolvingNames: true) ?? ""
-                let currentMessages = note.meetingAttachment?.chatMessages ?? []
-                let reply = try await service.chat(messages: currentMessages, transcript: transcript)
+                let attachment = note.meetingAttachment
+                let transcript = attachment?.transcript(resolvingNames: true) ?? ""
+                let speakers = attachment?.speakers ?? [:]
+                let tags = note.tags
+                let hasAudio = attachment?.audioFilePath != nil
+                let hasTranscript = !(attachment?.segments ?? []).isEmpty
+                let currentMessages = attachment?.chatMessages ?? []
 
-                var final = note
-                final.meetingAttachment?.chatMessages.append(ChatMessage(role: "assistant", content: reply))
-                note = final
-                appState.saveNote(final)
+                let response = try await service.chatWithMeetingControl(
+                    messages: currentMessages,
+                    transcript: transcript,
+                    speakers: speakers,
+                    tags: tags,
+                    hasAudio: hasAudio,
+                    hasTranscript: hasTranscript
+                )
+
+                isSending = false
+
+                if response.mode == "action", let action = response.action {
+                    var withConfirm = note
+                    withConfirm.meetingAttachment?.chatMessages.append(
+                        ChatMessage(role: "assistant", content: response.assistantMessage)
+                    )
+                    note = withConfirm
+                    appState.saveNote(withConfirm)
+
+                    isRunningAction = true
+                    do {
+                        let executor = MeetingActionExecutor(apiKey: appState.openAIKey)
+                        let mutated = try await executor.execute(action, on: note)
+                        note = mutated
+                        appState.saveNote(mutated)
+                    } catch {
+                        var errNote = note
+                        errNote.meetingAttachment?.chatMessages.append(
+                            ChatMessage(role: "assistant", content: "Action failed: \(error.localizedDescription)")
+                        )
+                        note = errNote
+                        appState.saveNote(errNote)
+                    }
+                    isRunningAction = false
+                } else {
+                    var finalNote = note
+                    finalNote.meetingAttachment?.chatMessages.append(
+                        ChatMessage(role: "assistant", content: response.assistantMessage)
+                    )
+                    note = finalNote
+                    appState.saveNote(finalNote)
+                }
             } catch {
-                var final = note
-                final.meetingAttachment?.chatMessages.append(ChatMessage(role: "assistant", content: "Sorry, something went wrong: \(error.localizedDescription)"))
-                note = final
-                appState.saveNote(final)
+                isSending = false
+                var finalNote = note
+                finalNote.meetingAttachment?.chatMessages.append(
+                    ChatMessage(role: "assistant", content: "Sorry, something went wrong: \(error.localizedDescription)")
+                )
+                note = finalNote
+                appState.saveNote(finalNote)
             }
-            isSending = false
         }
     }
 }

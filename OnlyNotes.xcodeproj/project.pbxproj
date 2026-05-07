@@ -26,6 +26,7 @@
 		A10000010000000000000019 /* EmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000019; };
 		A10000010000000000000020 /* BraveSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000020; };
 		A10000010000000000000021 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000021; };
+		A10000010000000000000031 /* MeetingActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000031; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +50,7 @@
 		A20000010000000000000019 /* EmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingService.swift; sourceTree = "<group>"; };
 		A20000010000000000000020 /* BraveSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BraveSearchService.swift; sourceTree = "<group>"; };
 		A20000010000000000000021 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A20000010000000000000031 /* MeetingActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingActionExecutor.swift; sourceTree = "<group>"; };
 		A20000010000000000000013 /* OnlyNotes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OnlyNotes.entitlements; sourceTree = "<group>"; };
 		A30000010000000000000001 /* OnlyNotes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnlyNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -116,6 +118,7 @@
 				A20000010000000000000023 /* WhisperTranscriptionService.swift */,
 				A20000010000000000000019 /* EmbeddingService.swift */,
 				A20000010000000000000020 /* BraveSearchService.swift */,
+				A20000010000000000000031 /* MeetingActionExecutor.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -211,6 +214,7 @@
 				A10000010000000000000019 /* EmbeddingService.swift in Sources */,
 				A10000010000000000000020 /* BraveSearchService.swift in Sources */,
 				A10000010000000000000021 /* Theme.swift in Sources */,
+				A10000010000000000000031 /* MeetingActionExecutor.swift in Sources */,
 				);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
