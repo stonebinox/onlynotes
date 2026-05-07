@@ -644,6 +644,8 @@ struct MeetingChatView: View {
     private func sendText(_ text: String) {
         guard !isBusy else { return }
 
+        let noteID = note.id
+
         let userMsg = ChatMessage(role: "user", content: text)
         var updated = note
         updated.meetingAttachment?.chatMessages.append(userMsg)
@@ -652,12 +654,16 @@ struct MeetingChatView: View {
         isSending = true
 
         Task {
+            func fresh() -> Note? { appState.notes.first { $0.id == noteID } }
+
             do {
                 let service = OpenAIService(apiKey: appState.openAIKey)
-                let attachment = note.meetingAttachment
+                // Snapshot values needed for the API call before first await
+                let snapshotNote = note
+                let attachment = snapshotNote.meetingAttachment
                 let transcript = attachment?.transcript(resolvingNames: true) ?? ""
                 let speakers = attachment?.speakers ?? [:]
-                let tags = note.tags
+                let tags = snapshotNote.tags
                 let hasAudio = attachment?.audioFilePath != nil
                 let hasTranscript = !(attachment?.segments ?? []).isEmpty
                 let currentMessages = attachment?.chatMessages ?? []
@@ -674,21 +680,22 @@ struct MeetingChatView: View {
                 isSending = false
 
                 if response.mode == "action", let action = response.action {
-                    var withConfirm = note
-                    withConfirm.meetingAttachment?.chatMessages.append(
+                    guard var current = fresh() else { return }
+                    current.meetingAttachment?.chatMessages.append(
                         ChatMessage(role: "assistant", content: response.assistantMessage)
                     )
-                    note = withConfirm
-                    appState.saveNote(withConfirm)
+                    note = current
+                    appState.saveNote(current)
 
                     isRunningAction = true
                     do {
+                        guard let forAction = fresh() else { isRunningAction = false; return }
                         let executor = MeetingActionExecutor(apiKey: appState.openAIKey)
-                        let mutated = try await executor.execute(action, on: note)
+                        let mutated = try await executor.execute(action, on: forAction)
                         note = mutated
                         appState.saveNote(mutated)
                     } catch {
-                        var errNote = note
+                        guard var errNote = fresh() else { isRunningAction = false; return }
                         errNote.meetingAttachment?.chatMessages.append(
                             ChatMessage(role: "assistant", content: "Action failed: \(error.localizedDescription)")
                         )
@@ -697,7 +704,7 @@ struct MeetingChatView: View {
                     }
                     isRunningAction = false
                 } else {
-                    var finalNote = note
+                    guard var finalNote = fresh() else { return }
                     finalNote.meetingAttachment?.chatMessages.append(
                         ChatMessage(role: "assistant", content: response.assistantMessage)
                     )
@@ -706,7 +713,7 @@ struct MeetingChatView: View {
                 }
             } catch {
                 isSending = false
-                var finalNote = note
+                guard var finalNote = fresh() else { return }
                 finalNote.meetingAttachment?.chatMessages.append(
                     ChatMessage(role: "assistant", content: "Sorry, something went wrong: \(error.localizedDescription)")
                 )

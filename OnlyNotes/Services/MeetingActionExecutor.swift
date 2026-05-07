@@ -43,11 +43,7 @@ struct MeetingActionExecutor {
                 throw ActionError.invalidArgs("rename_speaker requires speakerTag and newName")
             }
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                updated.meetingAttachment?.speakers.removeValue(forKey: String(tag))
-            } else {
-                updated.meetingAttachment?.speakers[String(tag)] = trimmed
-            }
+            updated.meetingAttachment?.speakers[String(tag)] = trimmed
 
         case "add_tag":
             guard let tag = action.tag,
