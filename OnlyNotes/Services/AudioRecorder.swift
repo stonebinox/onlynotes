@@ -181,14 +181,24 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
         guard let channelData = floatBuffer.floatChannelData?[0] else { return }
         let samples = Array(UnsafeBufferPointer(start: channelData, count: Int(floatBuffer.frameLength)))
 
+        // Soft limiter: only attenuate if peak exceeds 90% of full scale
+        var normalized = samples
+        let peak = normalized.map { abs($0) }.max() ?? 0
+        if peak > 0.9 {
+            let gain = 0.9 / peak
+            for i in 0..<normalized.count {
+                normalized[i] = normalized[i] * gain
+            }
+        }
+
         // Convert Float32 samples → Int16 AVAudioPCMBuffer
         guard let int16Format = AVAudioFormat(commonFormat: .pcmFormatInt16,
                                               sampleRate: 16000, channels: 1, interleaved: true),
-              let outBuffer = AVAudioPCMBuffer(pcmFormat: int16Format, frameCapacity: AVAudioFrameCount(samples.count))
+              let outBuffer = AVAudioPCMBuffer(pcmFormat: int16Format, frameCapacity: AVAudioFrameCount(normalized.count))
         else { return }
-        outBuffer.frameLength = AVAudioFrameCount(samples.count)
+        outBuffer.frameLength = AVAudioFrameCount(normalized.count)
         if let ptr = outBuffer.int16ChannelData?[0] {
-            for (i, sample) in samples.enumerated() {
+            for (i, sample) in normalized.enumerated() {
                 ptr[i] = Int16(max(Float(Int16.min), min(Float(Int16.max), sample * Float(Int16.max))))
             }
         }
