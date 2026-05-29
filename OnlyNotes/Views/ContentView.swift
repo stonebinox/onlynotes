@@ -31,6 +31,13 @@ struct ContentView: View {
             }
         }
         .onAppear { appState.loadNotes() }
+        .onChange(of: appState.notes) { _, newNotes in
+            if let sel = selectedNote,
+               let updated = newNotes.first(where: { $0.id == sel.id }),
+               updated.isMeetingNote != sel.isMeetingNote {
+                selectedNote = updated
+            }
+        }
     }
 }
 
@@ -47,6 +54,7 @@ struct NoteEditorView: View {
     @State private var isLoadingContext = false
     @State private var contextTask: Task<Void, Never>? = nil
     @State private var lastTriggeredBody: String = ""
+    @State private var showFilePicker = false
 
     var body: some View {
         HSplitView {
@@ -58,6 +66,13 @@ struct NoteEditorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button(action: { showFilePicker = true }) {
+                    Image(systemName: "waveform.badge.plus")
+                }
+                .help("Attach audio file")
+                .disabled(appState.isImporting)
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button(action: exportNote) {
                     Image(systemName: "square.and.arrow.up")
                 }
@@ -68,6 +83,31 @@ struct NoteEditorView: View {
             saveTimer?.invalidate()
             saveTimer = nil
             contextTask?.cancel()
+        }
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                let accessed = url.startAccessingSecurityScopedResource()
+                // Copy file synchronously before releasing security scope
+                let tempCopy = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: tempCopy)
+                try? FileManager.default.copyItem(at: url, to: tempCopy)
+                if accessed { url.stopAccessingSecurityScopedResource() }
+                saveTimer?.invalidate()
+                appState.importAudio(into: note.id, from: tempCopy)
+            }
+        }
+        .alert("Import Failed", isPresented: Binding(
+            get: { appState.importError != nil },
+            set: { if !$0 { appState.importError = nil } }
+        )) {
+            Button("OK") { appState.importError = nil }
+        } message: {
+            Text(appState.importError ?? "")
         }
         .onAppear {
             if !note.body.isEmpty { refreshContext(query: buildQuery()) }
@@ -100,6 +140,30 @@ struct NoteEditorView: View {
                     scheduleSave()
                     scheduleContextRefresh(body: new)
                 }
+
+            if appState.isImporting {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Transcribing audio…").foregroundStyle(.secondary)
+                }
+                .padding()
+            }
+        }
+        .onDrop(of: [.audio], isTargeted: nil) { providers in
+            guard !appState.isImporting else { return false }
+            guard let provider = providers.first else { return false }
+            provider.loadFileRepresentation(forTypeIdentifier: UTType.audio.identifier) { url, _ in
+                guard let url = url else { return }
+                let tempCopy = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: tempCopy)
+                try? FileManager.default.copyItem(at: url, to: tempCopy)
+                DispatchQueue.main.async {
+                    self.saveTimer?.invalidate()
+                    appState.importAudio(into: note.id, from: tempCopy)
+                }
+            }
+            return true
         }
     }
 
@@ -224,6 +288,7 @@ struct NoteEditorView: View {
     }
 
     private func scheduleSave() {
+        guard !appState.isImporting else { saveTimer?.invalidate(); return }
         saveTimer?.invalidate()
         let capturedID = note.id
         saveTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [self] _ in

@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import SwiftUI
 import Combine
@@ -5,6 +6,8 @@ import Combine
 class AppState: ObservableObject {
     @Published var notes: [Note] = []
     @Published var isProcessing = false
+    @Published var isImporting = false
+    @Published var importError: String?
     @Published var processingError: String?
     @Published var liveNotes: [MeetingNote] = []
     @Published var liveNoteDraft: String = ""
@@ -142,6 +145,71 @@ class AppState: ObservableObject {
                     self.isProcessing = false
                     self.liveNotes = []
                     self.liveNoteDraft = ""
+                }
+            }
+        }
+    }
+
+    // MARK: - Audio Import
+
+    func importAudio(into noteID: UUID, from sourceURL: URL) {
+        guard !isImporting else { return }
+        isImporting = true
+        importError = nil
+
+        Task {
+            do {
+                // 1. Copy file to app storage
+                let appDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                    .appendingPathComponent("OnlyNotes/ImportedAudio", isDirectory: true)
+                try FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+                let destURL = appDir.appendingPathComponent("\(noteID.uuidString).\(sourceURL.pathExtension)")
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+
+                // 2. Get duration
+                let asset = AVURLAsset(url: destURL)
+                let duration = CMTimeGetSeconds(asset.duration)
+
+                // 3. Transcribe (single-file path with speaker inference)
+                let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
+                let segments = try await whisperService.transcribe(audioURL: destURL)
+
+                // 4. Summarize
+                let openAIService = OpenAIService(apiKey: openAIKey)
+                let summary = try await openAIService.summarize(segments: segments, speakers: [:])
+
+                // 5. Update note in place — preserve existing data
+                await MainActor.run {
+                    guard var existingNote = self.notes.first(where: { $0.id == noteID }) else {
+                        self.importError = "Note no longer exists."
+                        self.isImporting = false
+                        return
+                    }
+
+                    let attachment = MeetingAttachment(
+                        segments: segments,
+                        summary: summary.summary,
+                        actionItems: summary.actionItems,
+                        duration: duration,
+                        audioFilePath: destURL.path
+                    )
+                    existingNote.meetingAttachment = attachment
+                    if existingNote.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        existingNote.title = summary.title
+                    }
+                    existingNote.updatedAt = Date()
+
+                    NoteStore.shared.save(existingNote)
+                    self.loadNotes()
+                    self.isImporting = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.importError = error.localizedDescription
+                    self.isImporting = false
                 }
             }
         }

@@ -204,10 +204,23 @@ class WhisperTranscriptionService {
         append("Content-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\n")
         append("segment\r\n")
 
-        // audio file
+        // audio file — detect format from URL extension
+        let ext = url.pathExtension.lowercased()
+        let mimeType: String
+        let filename: String
+        switch ext {
+        case "m4a": mimeType = "audio/mp4"; filename = "audio.m4a"
+        case "mp3": mimeType = "audio/mpeg"; filename = "audio.mp3"
+        case "mp4": mimeType = "audio/mp4"; filename = "audio.mp4"
+        case "caf": mimeType = "audio/x-caf"; filename = "audio.caf"
+        case "ogg", "oga": mimeType = "audio/ogg"; filename = "audio.ogg"
+        case "flac": mimeType = "audio/flac"; filename = "audio.flac"
+        case "webm": mimeType = "audio/webm"; filename = "audio.webm"
+        default: mimeType = "audio/wav"; filename = "audio.wav"
+        }
         append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
-        append("Content-Type: audio/wav\r\n\r\n")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
+        append("Content-Type: \(mimeType)\r\n\r\n")
         body.append(audioData)
         append("\r\n--\(boundary)--\r\n")
 
