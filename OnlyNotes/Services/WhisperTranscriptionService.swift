@@ -52,12 +52,19 @@ class WhisperTranscriptionService {
     }
 
     func transcribe(systemURL: URL, micURL: URL?) async throws -> [TranscriptSegment] {
+        var chunkErrors: [String] = []
+
         // Transcribe system audio → Speaker 2
         let systemChunks = try splitAudio(url: systemURL)
         var systemSegments: [TranscriptSegment] = []
-        for chunk in systemChunks {
-            if let raw = try? await transcribeChunk(url: chunk.url, offset: chunk.startTime) {
+        for (index, chunk) in systemChunks.enumerated() {
+            do {
+                let raw = try await transcribeChunk(url: chunk.url, offset: chunk.startTime)
                 systemSegments.append(contentsOf: raw)
+            } catch {
+                let msg = "chunk \(index) (system): \(error.localizedDescription)"
+                print("WhisperTranscriptionService: \(msg)")
+                chunkErrors.append(msg)
             }
         }
         for chunk in systemChunks where chunk.url != systemURL {
@@ -72,9 +79,14 @@ class WhisperTranscriptionService {
            let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
            (attrs[.size] as? Int ?? 0) > 4096 {
             let micChunks = try splitAudio(url: micURL)
-            for chunk in micChunks {
-                if let raw = try? await transcribeChunk(url: chunk.url, offset: chunk.startTime) {
+            for (index, chunk) in micChunks.enumerated() {
+                do {
+                    let raw = try await transcribeChunk(url: chunk.url, offset: chunk.startTime)
                     micSegments.append(contentsOf: raw)
+                } catch {
+                    let msg = "chunk \(index) (mic): \(error.localizedDescription)"
+                    print("WhisperTranscriptionService: \(msg)")
+                    chunkErrors.append(msg)
                 }
             }
             for chunk in micChunks where chunk.url != micURL {
@@ -88,7 +100,8 @@ class WhisperTranscriptionService {
 
         // Fallback cases
         if merged.isEmpty {
-            throw WhisperError.transcriptionFailed("All chunk transcriptions failed for both audio tracks.")
+            let details = chunkErrors.joined(separator: "; ")
+            throw WhisperError.transcriptionFailed("All chunk transcriptions failed for both audio tracks. Errors: \(details)")
         }
 
         if systemSegments.isEmpty {
@@ -227,22 +240,36 @@ class WhisperTranscriptionService {
         request.httpBody = body
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        let requestID = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "x-request-id") ?? "unknown"
 
         guard let http = response as? HTTPURLResponse else {
             throw WhisperError.transcriptionFailed("No HTTP response")
         }
         guard http.statusCode == 200 else {
             let msg = String(data: data, encoding: .utf8) ?? "unknown"
-            throw WhisperError.transcriptionFailed("HTTP \(http.statusCode): \(msg)")
+            throw WhisperError.transcriptionFailed("HTTP \(http.statusCode) (request-id: \(requestID)): \(msg)")
         }
 
-        return parseWhisperResponse(data: data, offset: offset)
+        return try parseWhisperResponse(data: data, offset: offset)
     }
 
-    private func parseWhisperResponse(data: Data, offset: TimeInterval) -> [TranscriptSegment] {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let segments = json["segments"] as? [[String: Any]]
-        else { return [] }
+    private func parseWhisperResponse(data: Data, offset: TimeInterval) throws -> [TranscriptSegment] {
+        let json: [String: Any]
+        do {
+            guard let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw WhisperError.parseError("Response is not a JSON object")
+            }
+            json = parsed
+        } catch let error as WhisperError {
+            throw error
+        } catch {
+            throw WhisperError.parseError("JSON parse error: \(error.localizedDescription)")
+        }
+
+        guard let segments = json["segments"] as? [[String: Any]] else {
+            let topLevelKeys = json.keys.map { $0 }
+            throw WhisperError.parseError("No 'segments' key in response. Top-level keys: \(topLevelKeys.sorted().joined(separator: ", "))")
+        }
 
         return segments.compactMap { seg -> TranscriptSegment? in
             guard let text = seg["text"] as? String,
@@ -394,6 +421,7 @@ enum WhisperError: LocalizedError {
     case invalidConfig
     case exportFailed
     case transcriptionFailed(String)
+    case parseError(String)
 
     var errorDescription: String? {
         switch self {
@@ -401,6 +429,7 @@ enum WhisperError: LocalizedError {
         case .invalidConfig: return "Invalid Whisper API configuration."
         case .exportFailed: return "Failed to export audio chunk."
         case .transcriptionFailed(let msg): return "Transcription failed: \(msg)"
+        case .parseError(let msg): return "Transcription parse error: \(msg)"
         }
     }
 }
