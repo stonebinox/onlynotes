@@ -192,7 +192,7 @@ class WhisperTranscriptionService {
         // model field
         append("--\(boundary)\r\n")
         append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
-        append("whisper-1\r\n")
+        append("gpt-4o-mini-transcribe-2025-12-15\r\n")
 
         // response_format field
         append("--\(boundary)\r\n")
