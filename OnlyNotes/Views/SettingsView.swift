@@ -17,7 +17,13 @@ struct SettingsView: View {
             Section("OpenAI") {
                 SecureField("API Key", text: $appState.openAIKey)
                     .textFieldStyle(.roundedBorder)
-                statusLabel(for: appState.openAIKey, purpose: "transcription, summarization & AI chat")
+                statusLabel(for: appState.openAIKey, purpose: "summarization, AI chat & fallback transcription")
+            }
+
+            Section("AssemblyAI") {
+                SecureField("API Key", text: $appState.assemblyAIKey)
+                    .textFieldStyle(.roundedBorder)
+                statusLabel(for: appState.assemblyAIKey, purpose: "system audio transcription with speaker diarization")
             }
 
             Section("Brave Search") {
@@ -27,7 +33,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 400)
+        .frame(width: 450, height: 480)
     }
 
     @ViewBuilder

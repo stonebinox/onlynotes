@@ -2,6 +2,7 @@ import Foundation
 
 struct MeetingActionExecutor {
     let apiKey: String
+    let assemblyAIKey: String
 
     func execute(_ action: MeetingAction, on note: Note) async throws -> Note {
         var updated = note
@@ -13,8 +14,22 @@ struct MeetingActionExecutor {
                 throw ActionError.noAudioFile
             }
             let systemURL = URL(fileURLWithPath: audioPath)
-            let whisper = WhisperTranscriptionService(apiKey: apiKey)
-            let segments = try await whisper.transcribe(systemURL: systemURL, micURL: nil)
+
+            let segments: [TranscriptSegment]
+            if !assemblyAIKey.isEmpty {
+                do {
+                    let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
+                    segments = try await assemblyAI.transcribe(url: systemURL)
+                } catch {
+                    print("AssemblyAI retranscribe failed, falling back to OpenAI: \(error.localizedDescription)")
+                    let whisper = WhisperTranscriptionService(apiKey: apiKey)
+                    segments = try await whisper.transcribe(systemURL: systemURL, micURL: nil)
+                }
+            } else {
+                let whisper = WhisperTranscriptionService(apiKey: apiKey)
+                segments = try await whisper.transcribe(systemURL: systemURL, micURL: nil)
+            }
+
             updated.meetingAttachment?.segments = segments
             updated.meetingAttachment?.speakers = [:]
             let openAI = OpenAIService(apiKey: apiKey)

@@ -20,6 +20,7 @@
 		A10000010000000000000011 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000011; };
 		A10000010000000000000012 /* TranscriptSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000014; };
 		A10000010000000000000023 /* WhisperTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000023; };
+		A10000010000000000000032 /* AssemblyAITranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000032; };
 		A10000010000000000000016 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000016; };
 		A10000010000000000000017 /* NoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000017; };
 		A10000010000000000000018 /* ContextResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000018; };
@@ -44,6 +45,7 @@
 		A20000010000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000010000000000000014 /* TranscriptSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSegment.swift; sourceTree = "<group>"; };
 		A20000010000000000000023 /* WhisperTranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperTranscriptionService.swift; sourceTree = "<group>"; };
+		A20000010000000000000032 /* AssemblyAITranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssemblyAITranscriptionService.swift; sourceTree = "<group>"; };
 		A20000010000000000000016 /* Note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Note.swift; sourceTree = "<group>"; };
 		A20000010000000000000017 /* NoteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteStore.swift; sourceTree = "<group>"; };
 		A20000010000000000000018 /* ContextResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextResult.swift; sourceTree = "<group>"; };
@@ -116,6 +118,7 @@
 				A20000010000000000000006 /* MeetingStore.swift */,
 				A20000010000000000000017 /* NoteStore.swift */,
 				A20000010000000000000023 /* WhisperTranscriptionService.swift */,
+				A20000010000000000000032 /* AssemblyAITranscriptionService.swift */,
 				A20000010000000000000019 /* EmbeddingService.swift */,
 				A20000010000000000000020 /* BraveSearchService.swift */,
 				A20000010000000000000031 /* MeetingActionExecutor.swift */,
@@ -208,6 +211,7 @@
 				A10000010000000000000011 /* SettingsView.swift in Sources */,
 				A10000010000000000000012 /* TranscriptSegment.swift in Sources */,
 				A10000010000000000000023 /* WhisperTranscriptionService.swift in Sources */,
+				A10000010000000000000032 /* AssemblyAITranscriptionService.swift in Sources */,
 				A10000010000000000000016 /* Note.swift in Sources */,
 				A10000010000000000000017 /* NoteStore.swift in Sources */,
 				A10000010000000000000018 /* ContextResult.swift in Sources */,

@@ -14,6 +14,7 @@ class AppState: ObservableObject {
 
     @AppStorage("openAIKey") var openAIKey: String = ""
     @AppStorage("braveSearchAPIKey") var braveSearchAPIKey: String = ""
+    @AppStorage("assemblyAIKey") var assemblyAIKey: String = ""
     @AppStorage("appearanceMode") var appearanceModeRaw: String = AppearanceMode.system.rawValue
 
     var appearanceMode: AppearanceMode {
@@ -95,10 +96,38 @@ class AppState: ObservableObject {
 
         Task {
             do {
-                let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
                 let openAIService = OpenAIService(apiKey: openAIKey)
 
-                let segments = try await whisperService.transcribe(systemURL: result.systemURL, micURL: result.micURL)
+                let segments: [TranscriptSegment]
+                if !assemblyAIKey.isEmpty {
+                    do {
+                        let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
+                        let systemSegments = try await assemblyAI.transcribe(url: result.systemURL)
+
+                        var micSegments: [TranscriptSegment] = []
+                        if let micURL = result.micURL,
+                           FileManager.default.fileExists(atPath: micURL.path),
+                           let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
+                           (attrs[.size] as? Int ?? 0) > 4096 {
+                            let whisper = WhisperTranscriptionService(apiKey: openAIKey)
+                            do {
+                                let micResult = try await whisper.transcribe(audioURL: micURL)
+                                micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
+                            } catch {
+                                print("Mic transcription failed (non-fatal): \(error.localizedDescription)")
+                            }
+                        }
+
+                        segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
+                    } catch {
+                        print("AssemblyAI failed, falling back to OpenAI: \(error.localizedDescription)")
+                        let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
+                        segments = try await whisperService.transcribe(systemURL: result.systemURL, micURL: result.micURL)
+                    }
+                } else {
+                    let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
+                    segments = try await whisperService.transcribe(systemURL: result.systemURL, micURL: result.micURL)
+                }
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:], notes: capturedNotes)
 
                 let attachment = MeetingAttachment(
@@ -174,8 +203,20 @@ class AppState: ObservableObject {
                 let duration = CMTimeGetSeconds(asset.duration)
 
                 // 3. Transcribe (single-file path with speaker inference)
-                let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
-                let segments = try await whisperService.transcribe(audioURL: destURL)
+                let segments: [TranscriptSegment]
+                if !assemblyAIKey.isEmpty {
+                    do {
+                        let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
+                        segments = try await assemblyAI.transcribe(url: destURL)
+                    } catch {
+                        print("AssemblyAI import failed, falling back to OpenAI: \(error.localizedDescription)")
+                        let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
+                        segments = try await whisperService.transcribe(audioURL: destURL)
+                    }
+                } else {
+                    let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
+                    segments = try await whisperService.transcribe(audioURL: destURL)
+                }
 
                 // 4. Summarize
                 let openAIService = OpenAIService(apiKey: openAIKey)
