@@ -73,6 +73,24 @@ struct MeetingActionExecutor {
             }
             updated.setTags(note.tags.filter { $0 != tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
 
+        case "translate":
+            guard let targetLanguage = action.targetLanguage,
+                  !targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ActionError.invalidArgs("translate requires a targetLanguage")
+            }
+            let segments = note.meetingAttachment?.segments ?? []
+            guard !segments.isEmpty else {
+                throw ActionError.invalidArgs("No transcript to translate")
+            }
+            let openAI = OpenAIService(apiKey: apiKey)
+            let translatedSegments = try await openAI.translateSegments(segments, to: targetLanguage)
+            updated.meetingAttachment?.segments = translatedSegments
+            // Regenerate summary with translated content
+            let summaryResult = try await openAI.summarize(segments: translatedSegments, speakers: note.meetingAttachment?.speakers ?? [:], notes: note.meetingAttachment?.notes ?? [])
+            updated.title = summaryResult.title
+            updated.meetingAttachment?.summary = summaryResult.summary
+            updated.meetingAttachment?.actionItems = summaryResult.actionItems
+
         default:
             throw ActionError.unknownAction(action.type)
         }

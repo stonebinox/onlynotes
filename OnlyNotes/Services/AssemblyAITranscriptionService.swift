@@ -55,7 +55,8 @@ class AssemblyAITranscriptionService {
 
         let body: [String: Any] = [
             "audio_url": audioURL,
-            "speaker_labels": true
+            "speaker_labels": true,
+            "language_detection": true
         ]
 
         var request = URLRequest(url: apiURL)
