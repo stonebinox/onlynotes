@@ -19,9 +19,8 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Settings") {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                NSApplication.shared.activate(ignoringOtherApps: true)
+            SettingsLink {
+                Text("Settings")
             }
 
             Divider()
