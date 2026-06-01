@@ -210,12 +210,7 @@ class WhisperTranscriptionService {
         // response_format field
         append("--\(boundary)\r\n")
         append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n")
-        append("verbose_json\r\n")
-
-        // timestamp_granularities field
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\n")
-        append("segment\r\n")
+        append("json\r\n")
 
         // audio file — detect format from URL extension
         let ext = url.pathExtension.lowercased()
@@ -266,25 +261,33 @@ class WhisperTranscriptionService {
             throw WhisperError.parseError("JSON parse error: \(error.localizedDescription)")
         }
 
-        guard let segments = json["segments"] as? [[String: Any]] else {
+        if let segments = json["segments"] as? [[String: Any]] {
+            return segments.compactMap { seg -> TranscriptSegment? in
+                guard let text = seg["text"] as? String,
+                      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return nil }
+
+                let start = (seg["start"] as? Double ?? 0) + offset
+                let end = max((seg["end"] as? Double ?? 0) + offset, start + 0.01)
+
+                return TranscriptSegment(
+                    speakerTag: 1,  // placeholder until inference pass
+                    text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                    startTime: start,
+                    endTime: end
+                )
+            }
+        } else if let text = json["text"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return [TranscriptSegment(
+                speakerTag: 1,
+                text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                startTime: offset,
+                endTime: offset + 0.01
+            )]
+        } else {
             let topLevelKeys = json.keys.map { $0 }
             throw WhisperError.parseError("No 'segments' key in response. Top-level keys: \(topLevelKeys.sorted().joined(separator: ", "))")
-        }
-
-        return segments.compactMap { seg -> TranscriptSegment? in
-            guard let text = seg["text"] as? String,
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { return nil }
-
-            let start = (seg["start"] as? Double ?? 0) + offset
-            let end = max((seg["end"] as? Double ?? 0) + offset, start + 0.01)
-
-            return TranscriptSegment(
-                speakerTag: 1,  // placeholder until inference pass
-                text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                startTime: start,
-                endTime: end
-            )
         }
     }
 
