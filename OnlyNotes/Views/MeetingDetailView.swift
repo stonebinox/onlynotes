@@ -9,6 +9,7 @@ struct MeetingDetailView: View {
     @State private var editingNoteID: UUID? = nil
     @State private var editingNoteDraft: String = ""
     @State private var tagDraft: String = ""
+    @State private var exportAudioError: String?
 
     private var attachment: MeetingAttachment? { note.meetingAttachment }
 
@@ -48,7 +49,14 @@ struct MeetingDetailView: View {
                 tagEditor
 
                 if let path = attachment?.audioFilePath {
-                    AudioPlayerBar(url: URL(fileURLWithPath: path))
+                    HStack {
+                        AudioPlayerBar(url: URL(fileURLWithPath: path))
+                        Button(action: exportAudio) {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Export audio file")
+                    }
                 }
             }
             .padding()
@@ -81,6 +89,11 @@ struct MeetingDetailView: View {
             }
         }
         .textSelection(.enabled)
+        .alert("Export Error", isPresented: Binding(get: { exportAudioError != nil }, set: { if !$0 { exportAudioError = nil } })) {
+            Button("OK", role: .cancel) { exportAudioError = nil }
+        } message: {
+            Text(exportAudioError ?? "")
+        }
         } // else
     }
 
@@ -406,6 +419,34 @@ struct MeetingDetailView: View {
         if panel.runModal() == .OK, let url = panel.url {
             let markdown = buildMarkdown()
             try? markdown.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func exportAudio() {
+        guard let path = attachment?.audioFilePath else { return }
+        let sourceURL = URL(fileURLWithPath: path)
+
+        guard FileManager.default.fileExists(atPath: path) else {
+            exportAudioError = "Audio file no longer exists at the stored location."
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "Export Audio"
+        let safeTitle = note.title.isEmpty ? "Untitled" : note.title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        panel.nameFieldStringValue = "\(safeTitle).\(sourceURL.pathExtension)"
+
+        if panel.runModal() == .OK, let destURL = panel.url {
+            do {
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            } catch {
+                exportAudioError = "Failed to export audio: \(error.localizedDescription)"
+            }
         }
     }
 
