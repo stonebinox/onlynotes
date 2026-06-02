@@ -101,15 +101,30 @@ class AppState: ObservableObject {
                 let segments: [TranscriptSegment]
                 if !assemblyAIKey.isEmpty {
                     do {
+                        // Hybrid: OpenAI for transcription + AssemblyAI for speaker diarization (parallel)
+                        let whisper = WhisperTranscriptionService(apiKey: openAIKey)
                         let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
-                        let systemSegments = try await assemblyAI.transcribe(url: result.systemURL)
 
+                        async let transcriptTask = whisper.transcribe(audioURL: result.systemURL)
+                        async let diarizeTask = assemblyAI.diarize(url: result.systemURL)
+
+                        let rawTranscript = try await transcriptTask
+                        let diarization = try? await diarizeTask
+
+                        var systemSegments: [TranscriptSegment]
+                        if let diarization = diarization, !diarization.isEmpty {
+                            systemSegments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
+                        } else {
+                            print("AssemblyAI diarization empty/failed, using OpenAI transcript without speaker labels")
+                            systemSegments = rawTranscript.map { var s = $0; s.speakerTag = 2; return s }
+                        }
+
+                        // Mic track (speaker 1)
                         var micSegments: [TranscriptSegment] = []
                         if let micURL = result.micURL,
                            FileManager.default.fileExists(atPath: micURL.path),
                            let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
                            (attrs[.size] as? Int ?? 0) > 4096 {
-                            let whisper = WhisperTranscriptionService(apiKey: openAIKey)
                             do {
                                 let micResult = try await whisper.transcribe(audioURL: micURL)
                                 micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
@@ -120,7 +135,7 @@ class AppState: ObservableObject {
 
                         segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
                     } catch {
-                        print("AssemblyAI failed, falling back to OpenAI: \(error.localizedDescription)")
+                        print("Hybrid transcription failed, falling back to OpenAI-only: \(error.localizedDescription)")
                         let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
                         segments = try await whisperService.transcribe(systemURL: result.systemURL, micURL: result.micURL)
                     }
@@ -202,14 +217,26 @@ class AppState: ObservableObject {
                 let asset = AVURLAsset(url: destURL)
                 let duration = CMTimeGetSeconds(asset.duration)
 
-                // 3. Transcribe (single-file path with speaker inference)
+                // 3. Transcribe (hybrid if AssemblyAI key available)
                 let segments: [TranscriptSegment]
                 if !assemblyAIKey.isEmpty {
                     do {
+                        let whisper = WhisperTranscriptionService(apiKey: openAIKey)
                         let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
-                        segments = try await assemblyAI.transcribe(url: destURL)
+
+                        async let transcriptTask = whisper.transcribe(audioURL: destURL)
+                        async let diarizeTask = assemblyAI.diarize(url: destURL)
+
+                        let rawTranscript = try await transcriptTask
+                        let diarization = try? await diarizeTask
+
+                        if let diarization = diarization, !diarization.isEmpty {
+                            segments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
+                        } else {
+                            segments = rawTranscript
+                        }
                     } catch {
-                        print("AssemblyAI import failed, falling back to OpenAI: \(error.localizedDescription)")
+                        print("Hybrid import failed, falling back to OpenAI-only: \(error.localizedDescription)")
                         let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
                         segments = try await whisperService.transcribe(audioURL: destURL)
                     }

@@ -18,10 +18,23 @@ struct MeetingActionExecutor {
             let segments: [TranscriptSegment]
             if !assemblyAIKey.isEmpty {
                 do {
+                    // Hybrid: OpenAI transcription + AssemblyAI diarization (parallel)
+                    let whisper = WhisperTranscriptionService(apiKey: apiKey)
                     let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
-                    segments = try await assemblyAI.transcribe(url: systemURL)
+
+                    async let transcriptTask = whisper.transcribe(audioURL: systemURL)
+                    async let diarizeTask = assemblyAI.diarize(url: systemURL)
+
+                    let rawTranscript = try await transcriptTask
+                    let diarization = try? await diarizeTask
+
+                    if let diarization = diarization, !diarization.isEmpty {
+                        segments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
+                    } else {
+                        segments = rawTranscript.map { var s = $0; s.speakerTag = 2; return s }
+                    }
                 } catch {
-                    print("AssemblyAI retranscribe failed, falling back to OpenAI: \(error.localizedDescription)")
+                    print("Hybrid retranscribe failed, falling back to OpenAI-only: \(error.localizedDescription)")
                     let whisper = WhisperTranscriptionService(apiKey: apiKey)
                     segments = try await whisper.transcribe(systemURL: systemURL, micURL: nil)
                 }

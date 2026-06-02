@@ -23,7 +23,7 @@ struct SettingsView: View {
             Section("AssemblyAI") {
                 SecureField("API Key", text: $appState.assemblyAIKey)
                     .textFieldStyle(.roundedBorder)
-                statusLabel(for: appState.assemblyAIKey, purpose: "system audio transcription with speaker diarization")
+                statusLabel(for: appState.assemblyAIKey, purpose: "speaker diarization for system audio")
             }
 
             Section("Brave Search") {

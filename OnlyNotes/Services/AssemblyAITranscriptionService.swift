@@ -18,6 +18,15 @@ class AssemblyAITranscriptionService {
         return try parseResponse(response)
     }
 
+    /// Returns speaker diarization timing only (no transcript text).
+    /// Speaker tags start at 2 to avoid collision with mic speaker 1.
+    func diarize(url: URL) async throws -> [DiarizationSegment] {
+        let uploadURL = try await uploadFile(at: url)
+        let transcriptID = try await submitTranscription(audioURL: uploadURL)
+        let response = try await pollForCompletion(id: transcriptID)
+        return parseDiarization(response)
+    }
+
     // MARK: - Upload
 
     private func uploadFile(at url: URL) async throws -> String {
@@ -194,6 +203,82 @@ class AssemblyAITranscriptionService {
         }
 
         throw AssemblyAIError.parseError("No utterances, words, or text in response")
+    }
+
+    // MARK: - Diarization-Only Parsing
+
+    private func parseDiarization(_ json: [String: Any]) -> [DiarizationSegment] {
+        var speakerMap: [String: Int] = [:]
+        var nextTag = 2
+
+        func tagFor(_ speaker: String) -> Int {
+            if let existing = speakerMap[speaker] { return existing }
+            let tag = nextTag
+            speakerMap[speaker] = tag
+            nextTag += 1
+            return tag
+        }
+
+        if let utterances = json["utterances"] as? [[String: Any]], !utterances.isEmpty {
+            return utterances.compactMap { utt -> DiarizationSegment? in
+                guard let startMs = utt["start"] as? Double,
+                      let endMs = utt["end"] as? Double,
+                      let speaker = utt["speaker"] as? String else { return nil }
+                return DiarizationSegment(
+                    speakerTag: tagFor(speaker),
+                    startTime: startMs / 1000.0,
+                    endTime: endMs / 1000.0
+                )
+            }
+        }
+
+        return []
+    }
+}
+
+// MARK: - Diarization Segment
+
+struct DiarizationSegment {
+    let speakerTag: Int
+    let startTime: TimeInterval
+    let endTime: TimeInterval
+}
+
+// MARK: - Hybrid Merge
+
+/// Assigns speaker tags from diarization segments to transcript segments by maximum temporal overlap.
+func mergeSpeakerLabels(transcriptSegments: [TranscriptSegment], diarization: [DiarizationSegment]) -> [TranscriptSegment] {
+    guard !diarization.isEmpty else { return transcriptSegments }
+
+    return transcriptSegments.map { seg in
+        var best = seg
+        var maxOverlap: TimeInterval = 0
+
+        for dSeg in diarization {
+            let overlapStart = max(seg.startTime, dSeg.startTime)
+            let overlapEnd = min(seg.endTime, dSeg.endTime)
+            let overlap = max(0, overlapEnd - overlapStart)
+            if overlap > maxOverlap {
+                maxOverlap = overlap
+                best.speakerTag = dSeg.speakerTag
+            }
+        }
+
+        // If no overlap found, find nearest diarization segment within 2s tolerance
+        if maxOverlap == 0 {
+            var minDistance: TimeInterval = .greatestFiniteMagnitude
+            for dSeg in diarization {
+                let dist = min(abs(seg.startTime - dSeg.endTime), abs(seg.endTime - dSeg.startTime))
+                if dist < minDistance {
+                    minDistance = dist
+                    if dist <= 2.0 {
+                        best.speakerTag = dSeg.speakerTag
+                    }
+                }
+            }
+        }
+
+        return best
     }
 }
 
