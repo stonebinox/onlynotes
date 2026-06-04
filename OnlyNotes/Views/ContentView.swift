@@ -233,31 +233,32 @@ struct NoteEditorView: View {
 
     @ViewBuilder
     private func contextResultRow(_ result: ContextResult) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(result.title)
-                .font(.onCaption)
-                .fontWeight(.medium)
-                .foregroundStyle(Color.onInk)
-                .lineLimit(1)
-            if !result.snippet.isEmpty {
-                Text(result.snippet)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.onMutedInk)
-                    .lineLimit(3)
-            }
-            if case .web(let url) = result.source {
-                Text(url)
-                    .font(.onMeta)
-                    .foregroundStyle(Color.onAccent)
+        Button(action: { insertContextResult(result) }) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(result.title)
+                    .font(.onCaption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.onInk)
                     .lineLimit(1)
-                    .onTapGesture {
-                        if let u = URL(string: url) { NSWorkspace.shared.open(u) }
-                    }
+                if !result.snippet.isEmpty {
+                    Text(result.snippet)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.onMutedInk)
+                        .lineLimit(3)
+                }
+                if case .web(let url) = result.source {
+                    Text(url)
+                        .font(.onMeta)
+                        .foregroundStyle(Color.onAccent)
+                        .lineLimit(1)
+                }
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
     }
 
     private var tagEditorView: some View {
@@ -318,6 +319,33 @@ struct NoteEditorView: View {
         note = updated
         appState.saveNote(updated)
         refreshContext(query: buildQuery())
+    }
+
+    private func insertContextResult(_ result: ContextResult) {
+        let snippet = result.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let reference: String
+        switch result.source {
+        case .internalNote(let id):
+            // Look up fresh title from appState
+            let freshTitle = appState.notes.first(where: { $0.id == id })?.title ?? result.title
+            let title = freshTitle.isEmpty ? "Untitled" : freshTitle
+            reference = "[Source: \(title)](onlynotes://note/\(id.uuidString))"
+        case .web(let url):
+            reference = "[Source](<\(url)>)"
+        }
+
+        let insertion: String
+        if snippet.isEmpty {
+            insertion = reference
+        } else {
+            insertion = "\(snippet)\n\(reference)"
+        }
+
+        let separator = note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+        note.body += separator + insertion
+        note.updatedAt = Date()
+        appState.saveNote(note)
     }
 
     private func scheduleContextRefresh(body: String) {
