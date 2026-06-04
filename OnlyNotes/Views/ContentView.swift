@@ -349,11 +349,12 @@ struct NoteEditorView: View {
     }
 
     private func refreshContext(query: String) {
-        let hasTags = !note.tags.isEmpty
         let hasQuery = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasTags = !note.tags.isEmpty
         guard hasTags || hasQuery else {
             internalContextResults = []
             webContextResults = []
+            contextError = nil
             return
         }
 
@@ -363,26 +364,49 @@ struct NoteEditorView: View {
 
             let notes = appState.notes
             let braveKey = appState.braveSearchAPIKey
+            let openAIKey = appState.openAIKey
             let currentTags = note.tags
             let currentID = note.id
 
+            // Run all three sources in parallel
             async let tagResults: [ContextResult] = Task.detached { @Sendable in
                 hasTags ? EmbeddingService.shared.findByTags(currentTags, among: notes, excludingID: currentID) : []
             }.value
-            async let webFetch: [ContextResult] = hasQuery
-                ? BraveSearchService().search(query: query, apiKey: braveKey)
+
+            async let semanticResults: [ContextResult] = hasQuery
+                ? EmbeddingService.shared.findSimilar(to: query, among: notes.filter { $0.id != currentID }, apiKey: openAIKey, topK: 5)
                 : []
 
-            let (tags, webResult) = await (tagResults, webFetch)
+            async let webFetch: (results: [ContextResult], error: String?) = Task.detached { @Sendable in
+                guard hasQuery else { return ([], nil) }
+                do {
+                    let results = try await BraveSearchService().search(query: query, apiKey: braveKey)
+                    return (results, nil)
+                } catch {
+                    return ([], error.localizedDescription)
+                }
+            }.value
+
+            let (tags, semantic, webData) = await (tagResults, semanticResults, webFetch)
 
             if Task.isCancelled {
                 await MainActor.run { isLoadingContext = false }
                 return
             }
 
+            // Merge and dedupe internal results by note ID, keeping highest score
+            var seenNoteIDs = Set<String>()
+            var mergedInternal: [ContextResult] = []
+            for result in (semantic + tags).sorted(by: { $0.score > $1.score }) {
+                if seenNoteIDs.insert(result.id).inserted {
+                    mergedInternal.append(result)
+                }
+            }
+
             await MainActor.run {
-                self.internalContextResults = hasTags ? tags : []
-                self.webContextResults = webResult
+                self.internalContextResults = mergedInternal
+                self.webContextResults = webData.results
+                self.contextError = webData.error
                 self.isLoadingContext = false
             }
         }
