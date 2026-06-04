@@ -49,7 +49,7 @@ struct NoteEditorView: View {
     @State private var tagDraft: String = ""
     @State private var saveTimer: Timer? = nil
     @State private var internalContextResults: [ContextResult] = []
-    @State private var webContextResults: [ContextResult] = []
+    @State private var webAnswer: WebAnswer? = nil
     @State private var contextError: String? = nil
     @State private var isLoadingContext = false
     @State private var contextTask: Task<Void, Never>? = nil
@@ -184,15 +184,25 @@ struct NoteEditorView: View {
 
             Divider()
 
-            if !isLoadingContext && internalContextResults.isEmpty && webContextResults.isEmpty {
+            if !isLoadingContext && internalContextResults.isEmpty && webAnswer == nil {
                 VStack(spacing: Spacing.sm) {
-                    Image(systemName: "text.magnifyingglass")
-                        .font(.system(size: 32))
-                        .foregroundStyle(Color.onFaintInk)
-                    Text("Context will appear\nas you write")
-                        .font(.onCaption)
-                        .foregroundStyle(Color.onFaintInk)
-                        .multilineTextAlignment(.center)
+                    if let error = contextError {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 32))
+                            .foregroundStyle(Color(red: 0.85, green: 0.45, blue: 0.10))
+                        Text(error)
+                            .font(.onCaption)
+                            .foregroundStyle(Color.onMutedInk)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Image(systemName: "text.magnifyingglass")
+                            .font(.system(size: 32))
+                            .foregroundStyle(Color.onFaintInk)
+                        Text("Context will appear\nas you write")
+                            .font(.onCaption)
+                            .foregroundStyle(Color.onFaintInk)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -205,12 +215,29 @@ struct NoteEditorView: View {
                                 Divider().padding(.leading, 12)
                             }
                         }
-                        if !webContextResults.isEmpty {
+                        if let answer = webAnswer {
                             sectionHeader("From the web", icon: "globe")
-                            ForEach(webContextResults) { result in
-                                contextResultRow(result)
-                                Divider().padding(.leading, 12)
+                            Button(action: { insertWebAnswer(answer) }) {
+                                VStack(alignment: .leading, spacing: Spacing.sm) {
+                                    Text(answer.text)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.onInk)
+                                        .lineLimit(8)
+                                    if !answer.citations.isEmpty {
+                                        ForEach(answer.citations.prefix(3), id: \.url) { cite in
+                                            Text(cite.title.isEmpty ? cite.url : cite.title)
+                                                .font(.onMeta)
+                                                .foregroundStyle(Color.onAccent)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.sm)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -321,6 +348,25 @@ struct NoteEditorView: View {
         refreshContext(query: buildQuery())
     }
 
+    private func insertWebAnswer(_ answer: WebAnswer) {
+        let text = answer.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        var insertion = text
+        if !answer.citations.isEmpty {
+            let citationLines = answer.citations.prefix(3).map { cite in
+                let label = cite.title.isEmpty ? cite.url : cite.title
+                return "- [\(label)](<\(cite.url)>)"
+            }
+            insertion += "\n\nSources:\n" + citationLines.joined(separator: "\n")
+        }
+
+        let separator = note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
+        note.body += separator + insertion
+        note.updatedAt = Date()
+        appState.saveNote(note)
+    }
+
     private func insertContextResult(_ result: ContextResult) {
         let snippet = result.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -381,7 +427,7 @@ struct NoteEditorView: View {
         let hasTags = !note.tags.isEmpty
         guard hasTags || hasQuery else {
             internalContextResults = []
-            webContextResults = []
+            webAnswer = nil
             contextError = nil
             return
         }
@@ -405,15 +451,32 @@ struct NoteEditorView: View {
                 ? EmbeddingService.shared.findSimilar(to: query, among: notes.filter { $0.id != currentID }, apiKey: openAIKey, topK: 5)
                 : []
 
-            async let webFetch: (results: [ContextResult], error: String?) = Task.detached { @Sendable in
-                guard hasQuery else { return ([], nil) }
+            async let webFetch: (answer: WebAnswer?, error: String?) = {
+                guard hasQuery else { return (nil, nil) }
+                let service = BraveSearchService()
+                // Try Answers API first
                 do {
-                    let results = try await BraveSearchService().search(query: query, apiKey: braveKey)
-                    return (results, nil)
+                    let answer = try await service.answer(query: query, apiKey: braveKey)
+                    return (answer, nil)
                 } catch {
-                    return ([], error.localizedDescription)
+                    let answersError = error.localizedDescription
+                    // Fallback to raw search
+                    do {
+                        let results = try await service.search(query: query, apiKey: braveKey)
+                        guard !results.isEmpty else { return (nil, answersError) }
+                        let text = results.map { r in "\(r.title)\n\(r.snippet)" }.joined(separator: "\n\n")
+                        var citations: [WebAnswerCitation] = []
+                        for r in results {
+                            if case .web(let url) = r.source {
+                                citations.append(WebAnswerCitation(title: r.title, url: url))
+                            }
+                        }
+                        return (WebAnswer(text: text, citations: citations), nil)
+                    } catch {
+                        return (nil, answersError)
+                    }
                 }
-            }.value
+            }()
 
             let (tags, semantic, webData) = await (tagResults, semanticResults, webFetch)
 
@@ -433,7 +496,7 @@ struct NoteEditorView: View {
 
             await MainActor.run {
                 self.internalContextResults = mergedInternal
-                self.webContextResults = webData.results
+                self.webAnswer = webData.answer
                 self.contextError = webData.error
                 self.isLoadingContext = false
             }

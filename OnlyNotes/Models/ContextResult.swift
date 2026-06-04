@@ -17,3 +17,13 @@ struct ContextResult: Identifiable {
     let source: ContextSource
     let score: Double  // 0–1, higher is more relevant
 }
+
+struct WebAnswerCitation {
+    let title: String
+    let url: String
+}
+
+struct WebAnswer {
+    let text: String
+    let citations: [WebAnswerCitation]
+}
