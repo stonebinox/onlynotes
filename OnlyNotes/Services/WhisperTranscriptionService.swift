@@ -14,6 +14,13 @@ class WhisperTranscriptionService {
     // MARK: - Public
 
     func transcribe(audioURL: URL) async throws -> [TranscriptSegment] {
+        let raw = try await transcribeRaw(audioURL: audioURL)
+        return await inferSpeakers(segments: raw)
+    }
+
+    /// Transcribe without speaker inference — for use in hybrid pipeline where
+    /// speaker labels come from AssemblyAI diarization + GPT-4o post-processing.
+    func transcribeRaw(audioURL: URL) async throws -> [TranscriptSegment] {
         let chunks = try splitAudio(url: audioURL)
         var allSegments: [TranscriptSegment] = []
         var partialWarning: String? = nil
@@ -35,20 +42,18 @@ class WhisperTranscriptionService {
         }
 
         let merged = dedupeOverlap(allSegments)
-        let withSpeakers = await inferSpeakers(segments: merged)
 
         if let warning = partialWarning {
-            // Prepend a marker segment so the warning surfaces in the transcript
             let marker = TranscriptSegment(
                 speakerTag: 0,
                 text: "⚠️ \(warning)",
-                startTime: (withSpeakers.last?.endTime ?? 0) + 1,
-                endTime: (withSpeakers.last?.endTime ?? 0) + 1
+                startTime: (merged.last?.endTime ?? 0) + 1,
+                endTime: (merged.last?.endTime ?? 0) + 1
             )
-            return withSpeakers + [marker]
+            return merged + [marker]
         }
 
-        return withSpeakers
+        return merged
     }
 
     func transcribe(systemURL: URL, micURL: URL?) async throws -> [TranscriptSegment] {
@@ -337,7 +342,7 @@ class WhisperTranscriptionService {
 
     // MARK: - GPT-4o Speaker Inference
 
-    private func inferSpeakers(segments: [TranscriptSegment]) async -> [TranscriptSegment] {
+    func inferSpeakers(segments: [TranscriptSegment]) async -> [TranscriptSegment] {
         guard !segments.isEmpty, !apiKey.isEmpty else { return segments }
 
         // Build compact representation for GPT-4o

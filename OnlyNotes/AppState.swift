@@ -105,7 +105,7 @@ class AppState: ObservableObject {
                         let whisper = WhisperTranscriptionService(apiKey: openAIKey)
                         let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
 
-                        async let transcriptTask = whisper.transcribe(audioURL: result.systemURL)
+                        async let transcriptTask = whisper.transcribeRaw(audioURL: result.systemURL)
                         async let diarizeTask = assemblyAI.diarize(url: result.systemURL)
 
                         let rawTranscript = try await transcriptTask
@@ -126,14 +126,16 @@ class AppState: ObservableObject {
                            let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
                            (attrs[.size] as? Int ?? 0) > 4096 {
                             do {
-                                let micResult = try await whisper.transcribe(audioURL: micURL)
+                                let micResult = try await whisper.transcribeRaw(audioURL: micURL)
                                 micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
                             } catch {
                                 print("Mic transcription failed (non-fatal): \(error.localizedDescription)")
                             }
                         }
 
-                        segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
+                        let merged = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
+                        // GPT-4o speaker inference to refine/correct speaker labels
+                        segments = await whisper.inferSpeakers(segments: merged)
                     } catch {
                         print("Hybrid transcription failed, falling back to OpenAI-only: \(error.localizedDescription)")
                         let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
@@ -224,17 +226,20 @@ class AppState: ObservableObject {
                         let whisper = WhisperTranscriptionService(apiKey: openAIKey)
                         let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
 
-                        async let transcriptTask = whisper.transcribe(audioURL: destURL)
+                        async let transcriptTask = whisper.transcribeRaw(audioURL: destURL)
                         async let diarizeTask = assemblyAI.diarize(url: destURL)
 
                         let rawTranscript = try await transcriptTask
                         let diarization = try? await diarizeTask
 
+                        let merged: [TranscriptSegment]
                         if let diarization = diarization, !diarization.isEmpty {
-                            segments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
+                            merged = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
                         } else {
-                            segments = rawTranscript
+                            merged = rawTranscript
                         }
+                        // GPT-4o speaker inference to refine/correct speaker labels
+                        segments = await whisper.inferSpeakers(segments: merged)
                     } catch {
                         print("Hybrid import failed, falling back to OpenAI-only: \(error.localizedDescription)")
                         let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
