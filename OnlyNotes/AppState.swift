@@ -118,6 +118,9 @@ class AppState: ObservableObject {
                             print("AssemblyAI diarization empty/failed, using OpenAI transcript without speaker labels")
                             systemSegments = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
                         }
+                        // Consolidate over-fragmented speaker IDs. Mic speaker 1 is reserved for the
+                        // local-mic track added below, so protect it from being merged into the system side.
+                        systemSegments = await openAIService.consolidateSpeakerTags(systemSegments, protectedTags: [0, 1])
 
                         // Mic track (speaker 1)
                         var micSegments: [TranscriptSegment] = []
@@ -230,11 +233,14 @@ class AppState: ObservableObject {
                         let rawTranscript = try await transcriptTask
                         let diarization = try? await diarizeTask
 
+                        let merged: [TranscriptSegment]
                         if let diarization = diarization, !diarization.isEmpty {
-                            segments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
+                            merged = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
                         } else {
-                            segments = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
+                            merged = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
                         }
+                        let openAIService = OpenAIService(apiKey: openAIKey)
+                        segments = await openAIService.consolidateSpeakerTags(merged)
                     } catch {
                         print("Hybrid import failed, falling back to OpenAI-only: \(error.localizedDescription)")
                         let whisperService = WhisperTranscriptionService(apiKey: openAIKey)

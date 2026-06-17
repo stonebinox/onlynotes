@@ -285,6 +285,123 @@ class OpenAIService {
 
         return translated
     }
+
+    /// Consolidates redundant speaker IDs in a transcript by asking GPT-4o to identify which
+    /// speaker IDs refer to the same real person (AssemblyAI often over-fragments). Only
+    /// `speakerTag` values are modified — id, text, startTime, endTime, and ordering are preserved.
+    /// `protectedTags` are never used as either side of a remap. Callers should always include 0
+    /// (warning markers); dual-track recording flows should also include 1 (mic speaker) to keep
+    /// it isolated from the system-audio track before they are merged.
+    /// Fail-open: returns the input segments unchanged on any API/parse error.
+    func consolidateSpeakerTags(_ segments: [TranscriptSegment], protectedTags: Set<Int> = [0]) async -> [TranscriptSegment] {
+        guard !segments.isEmpty, !apiKey.isEmpty else { return segments }
+
+        // Build payload — skip protected tags so we don't ask the model to remap them, but they
+        // stay present in the output.
+        let candidates = segments.enumerated().compactMap { (i, seg) -> [String: Any]? in
+            guard !protectedTags.contains(seg.speakerTag) else { return nil }
+            let truncatedText = seg.text.count > 200 ? String(seg.text.prefix(200)) + "…" : seg.text
+            return ["index": i, "speaker_id": seg.speakerTag, "text": truncatedText] as [String: Any]
+        }
+        guard candidates.count >= 2 else { return segments }
+        let uniqueTags = Set(candidates.compactMap { $0["speaker_id"] as? Int })
+        guard uniqueTags.count >= 2 else { return segments }
+
+        let systemPrompt = """
+        You are a speaker diarization cleanup assistant. The transcript below has speaker IDs from an automatic system that sometimes splits ONE real person across multiple speaker IDs (especially at the start of recordings or across short utterances).
+
+        Your task: identify speaker IDs that refer to the SAME real person and return a remap.
+
+        Strong signals that two IDs are the SAME person:
+        - One ID's segment ends mid-sentence without punctuation, the next ID's segment is a clear continuation
+        - The same ID-pair alternates rapidly through what is clearly one continuous thought
+        - Short fragments (one or two words) bookended by the same person's content
+
+        Strong signals that two IDs are DIFFERENT people:
+        - One person addresses another by name and gets a reply
+        - Clear Q→A turn structure with semantic shift
+        - Different roles in the conversation (host vs guest, presenter vs audience)
+
+        Be conservative. Only merge when evidence is strong. Preserving real distinct speakers matters more than over-consolidating.
+
+        Return JSON in this exact format:
+        {"remap": {"<old_id>": <new_id>, ...}}
+
+        Only include entries where old_id != new_id. If no consolidation is needed, return {"remap": {}}.
+        The new_id values must be integers chosen from the existing speaker_id set in the input.
+        """
+
+        guard let userJSON = try? JSONSerialization.data(withJSONObject: ["segments": candidates]),
+              let userText = String(data: userJSON, encoding: .utf8) else {
+            return segments
+        }
+
+        let payload: [String: Any] = [
+            "model": "gpt-4o",
+            "response_format": ["type": "json_object"],
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userText]
+            ]
+        ]
+
+        guard let url = URL(string: "https://api.openai.com/v1/chat/completions"),
+              let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            return segments
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        request.timeoutInterval = 60
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let chatResp = try? JSONDecoder().decode(ChatResponse.self, from: data),
+              let content = chatResp.choices.first?.message.content,
+              let contentData = content.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any],
+              let remapRaw = parsed["remap"] as? [String: Any]
+        else {
+            print("OpenAIService: consolidateSpeakerTags failed, returning segments unchanged")
+            return segments
+        }
+
+        // Validate the remap: keys/values must be integers, both must be in the original tag set
+        // (we never invent new speakers), neither side may be a protected tag, and no-op remaps
+        // are dropped.
+        var remap: [Int: Int] = [:]
+        for (key, value) in remapRaw {
+            guard let oldID = Int(key), let newID = value as? Int else { continue }
+            guard !protectedTags.contains(oldID), !protectedTags.contains(newID) else { continue }
+            guard uniqueTags.contains(oldID), uniqueTags.contains(newID) else { continue }
+            guard oldID != newID else { continue }
+            remap[oldID] = newID
+        }
+
+        // Resolve transitive merges (a→b, b→c becomes a→c). Bounded iterations to avoid cycles.
+        for _ in 0..<8 {
+            var changed = false
+            for (old, new) in remap {
+                if let next = remap[new], next != new {
+                    remap[old] = next
+                    changed = true
+                }
+            }
+            if !changed { break }
+        }
+
+        guard !remap.isEmpty else { return segments }
+
+        return segments.map { seg in
+            guard let newTag = remap[seg.speakerTag] else { return seg }
+            var s = seg
+            s.speakerTag = newTag
+            return s
+        }
+    }
 }
 
 // MARK: - Models
