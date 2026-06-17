@@ -27,3 +27,12 @@ struct WebAnswer {
     let text: String
     let citations: [WebAnswerCitation]
 }
+
+enum WebContextState {
+    case idle           // no query yet
+    case disabled       // no Brave key set
+    case loading        // request in flight
+    case failed(String) // error message
+    case noResults      // request succeeded, no results
+    case answer(WebAnswer) // success with answer
+}

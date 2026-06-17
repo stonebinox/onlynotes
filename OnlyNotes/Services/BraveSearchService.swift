@@ -4,7 +4,8 @@ class BraveSearchService {
     private let endpoint = "https://api.search.brave.com/res/v1/web/search"
 
     func search(query: String, apiKey: String) async throws -> [ContextResult] {
-        guard !apiKey.isEmpty, !query.isEmpty else { return [] }
+        guard !apiKey.isEmpty else { throw BraveSearchError.networkError("Brave API key not set") }
+        guard !query.isEmpty else { throw BraveSearchError.networkError("Empty query") }
         var components = URLComponents(string: endpoint)!
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
