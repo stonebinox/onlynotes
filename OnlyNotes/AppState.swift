@@ -116,7 +116,7 @@ class AppState: ObservableObject {
                             systemSegments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
                         } else {
                             print("AssemblyAI diarization empty/failed, using OpenAI transcript without speaker labels")
-                            systemSegments = rawTranscript.map { var s = $0; s.speakerTag = 2; return s }
+                            systemSegments = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
                         }
 
                         // Mic track (speaker 1)
@@ -133,9 +133,7 @@ class AppState: ObservableObject {
                             }
                         }
 
-                        let merged = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
-                        // GPT-4o speaker inference to refine/correct speaker labels
-                        segments = await whisper.inferSpeakers(segments: merged)
+                        segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
                     } catch {
                         print("Hybrid transcription failed, falling back to OpenAI-only: \(error.localizedDescription)")
                         let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
@@ -232,14 +230,11 @@ class AppState: ObservableObject {
                         let rawTranscript = try await transcriptTask
                         let diarization = try? await diarizeTask
 
-                        let merged: [TranscriptSegment]
                         if let diarization = diarization, !diarization.isEmpty {
-                            merged = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
+                            segments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
                         } else {
-                            merged = rawTranscript
+                            segments = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
                         }
-                        // GPT-4o speaker inference to refine/correct speaker labels
-                        segments = await whisper.inferSpeakers(segments: merged)
                     } catch {
                         print("Hybrid import failed, falling back to OpenAI-only: \(error.localizedDescription)")
                         let whisperService = WhisperTranscriptionService(apiKey: openAIKey)

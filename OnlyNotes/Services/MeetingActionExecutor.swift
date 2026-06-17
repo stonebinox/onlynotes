@@ -28,14 +28,11 @@ struct MeetingActionExecutor {
                     let rawTranscript = try await transcriptTask
                     let diarization = try? await diarizeTask
 
-                    let merged: [TranscriptSegment]
                     if let diarization = diarization, !diarization.isEmpty {
-                        merged = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
+                        segments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
                     } else {
-                        merged = rawTranscript.map { var s = $0; s.speakerTag = 2; return s }
+                        segments = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
                     }
-                    // GPT-4o speaker inference to refine/correct speaker labels
-                    segments = await whisper.inferSpeakers(segments: merged)
                 } catch {
                     print("Hybrid retranscribe failed, falling back to OpenAI-only: \(error.localizedDescription)")
                     let whisper = WhisperTranscriptionService(apiKey: apiKey)

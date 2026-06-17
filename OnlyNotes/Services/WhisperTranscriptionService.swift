@@ -15,7 +15,11 @@ class WhisperTranscriptionService {
 
     func transcribe(audioURL: URL) async throws -> [TranscriptSegment] {
         let raw = try await transcribeRaw(audioURL: audioURL)
-        return await inferSpeakers(segments: raw)
+        // OpenAI-only path: dedupe chunk-overlap content before speaker inference.
+        // The hybrid path (which calls transcribeRaw directly) skips dedupe and trims
+        // overlap inside mergeSpeakerLabels instead.
+        let deduped = dedupeOverlap(raw)
+        return await inferSpeakers(segments: deduped)
     }
 
     /// Transcribe without speaker inference — for use in hybrid pipeline where
@@ -41,7 +45,12 @@ class WhisperTranscriptionService {
             try? FileManager.default.removeItem(at: chunk.url)
         }
 
-        let merged = dedupeOverlap(allSegments)
+        // NOTE: do NOT run dedupeOverlap here. The hybrid merge in mergeSpeakerLabels
+        // expects each chunk's full text intact (it trims the overlap window itself by
+        // chunkDuration ratio). Global text dedupe would remove repeated short phrases
+        // like "yeah"/"okay" from later chunks too, shifting proportional slicing.
+        // The OpenAI-only path uses transcribe(audioURL:) which still dedupes.
+        let merged = allSegments
 
         if let warning = partialWarning {
             let marker = TranscriptSegment(
