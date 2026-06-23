@@ -90,14 +90,18 @@ struct NoteEditorView: View {
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 let accessed = url.startAccessingSecurityScopedResource()
-                // Copy file synchronously before releasing security scope
                 let tempCopy = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.removeItem(at: tempCopy)
-                try? FileManager.default.copyItem(at: url, to: tempCopy)
-                if accessed { url.stopAccessingSecurityScopedResource() }
-                saveTimer?.invalidate()
-                appState.importAudio(into: note.id, from: tempCopy)
+                    .appendingPathComponent("\(UUID().uuidString)-\(url.lastPathComponent)")
+                do {
+                    try? FileManager.default.removeItem(at: tempCopy)
+                    try FileManager.default.copyItem(at: url, to: tempCopy)
+                    if accessed { url.stopAccessingSecurityScopedResource() }
+                    saveTimer?.invalidate()
+                    appState.importAudio(into: note.id, from: tempCopy)
+                } catch {
+                    if accessed { url.stopAccessingSecurityScopedResource() }
+                    appState.importError = "Could not access selected file: \(error.localizedDescription)"
+                }
             }
         }
         .alert("Import Failed", isPresented: Binding(
@@ -157,12 +161,19 @@ struct NoteEditorView: View {
             provider.loadFileRepresentation(forTypeIdentifier: UTType.audio.identifier) { url, _ in
                 guard let url = url else { return }
                 let tempCopy = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.removeItem(at: tempCopy)
-                try? FileManager.default.copyItem(at: url, to: tempCopy)
-                DispatchQueue.main.async {
-                    self.saveTimer?.invalidate()
-                    appState.importAudio(into: note.id, from: tempCopy)
+                    .appendingPathComponent("\(UUID().uuidString)-\(url.lastPathComponent)")
+                do {
+                    try? FileManager.default.removeItem(at: tempCopy)
+                    try FileManager.default.copyItem(at: url, to: tempCopy)
+                    DispatchQueue.main.async {
+                        self.saveTimer?.invalidate()
+                        appState.importAudio(into: note.id, from: tempCopy)
+                    }
+                } catch {
+                    let msg = "Could not access dropped file: \(error.localizedDescription)"
+                    DispatchQueue.main.async {
+                        appState.importError = msg
+                    }
                 }
             }
             return true

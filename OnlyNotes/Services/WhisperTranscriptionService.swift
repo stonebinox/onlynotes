@@ -157,7 +157,7 @@ class WhisperTranscriptionService {
             let endCM = CMTime(seconds: chunkEnd, preferredTimescale: 44100)
             let timeRange = CMTimeRange(start: startCM, end: endCM)
 
-            let chunkURL = tempDir.appendingPathComponent("chunk_\(Int(chunkStart)).wav")
+            let chunkURL = tempDir.appendingPathComponent("chunk_\(Int(chunkStart)).m4a")
 
             try exportChunk(asset: asset, timeRange: timeRange, to: chunkURL)
             chunks.append(AudioChunk(url: chunkURL, startTime: chunkStart))
@@ -171,12 +171,12 @@ class WhisperTranscriptionService {
     private func exportChunk(asset: AVURLAsset, timeRange: CMTimeRange, to outputURL: URL) throws {
         try? FileManager.default.removeItem(at: outputURL)
 
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
+        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
             throw WhisperError.exportFailed
         }
 
         exportSession.outputURL = outputURL
-        exportSession.outputFileType = .wav
+        exportSession.outputFileType = .m4a
         exportSession.timeRange = timeRange
 
         let sema = DispatchSemaphore(value: 0)
@@ -191,9 +191,8 @@ class WhisperTranscriptionService {
         sema.wait()
 
         if let err = exportError { throw err }
-        guard exportSession.status == .completed else {
-            throw WhisperError.exportFailed
-        }
+        if let err = exportSession.error { throw err }
+        guard exportSession.status == .completed else { throw WhisperError.exportFailed }
     }
 
     // MARK: - Whisper Transcription
