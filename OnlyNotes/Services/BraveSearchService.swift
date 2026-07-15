@@ -5,10 +5,14 @@ class BraveSearchService {
 
     func search(query: String, apiKey: String) async throws -> [ContextResult] {
         guard !apiKey.isEmpty else { throw BraveSearchError.networkError("Brave API key not set") }
-        guard !query.isEmpty else { throw BraveSearchError.networkError("Empty query") }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw BraveSearchError.networkError("Empty query") }
+        let words = trimmed.split(whereSeparator: { $0.isWhitespace })
+        let limitedWords = words.prefix(50).joined(separator: " ")
+        let clampedQuery = String(limitedWords.prefix(400))
         var components = URLComponents(string: endpoint)!
         components.queryItems = [
-            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "q", value: clampedQuery),
             URLQueryItem(name: "count", value: "5"),
             URLQueryItem(name: "extra_snippets", value: "true")
         ]
