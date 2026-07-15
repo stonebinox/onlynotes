@@ -498,30 +498,15 @@ struct NoteEditorView: View {
             async let webFetch: WebContextState = {
                 guard hasQuery else { return .idle }
                 guard !braveKey.isEmpty else { return .disabled }
-                let service = BraveSearchService()
-                // Try Answers API first
+                guard !openAIKey.isEmpty else { return .failed("OpenAI API key not set in Settings") }
                 do {
-                    let answer = try await service.answer(query: query, apiKey: braveKey)
+                    let results = try await BraveSearchService().search(query: query, apiKey: braveKey)
+                    if results.isEmpty { return .noResults }
+                    let openAI = OpenAIService(apiKey: openAIKey)
+                    let answer = try await openAI.synthesizeWebAnswer(query: query, results: results)
                     return .answer(answer)
                 } catch {
-                    let answersError = error.localizedDescription
-                    // Fallback to raw search
-                    do {
-                        let results = try await service.search(query: query, apiKey: braveKey)
-                        if results.isEmpty {
-                            return .noResults
-                        }
-                        let text = results.map { r in "\(r.title)\n\(r.snippet)" }.joined(separator: "\n\n")
-                        var citations: [WebAnswerCitation] = []
-                        for r in results {
-                            if case .web(let url) = r.source {
-                                citations.append(WebAnswerCitation(title: r.title, url: url))
-                            }
-                        }
-                        return .answer(WebAnswer(text: text, citations: citations))
-                    } catch let searchError {
-                        return .failed("Answers: \(answersError) — Search: \(searchError.localizedDescription)")
-                    }
+                    return .failed(error.localizedDescription)
                 }
             }()
 

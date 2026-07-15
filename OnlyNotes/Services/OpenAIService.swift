@@ -2,9 +2,78 @@ import Foundation
 
 class OpenAIService {
     private let apiKey: String
+    private let webAnswerModel = "gpt-5.4-mini-2026-03-17"
 
     init(apiKey: String) {
         self.apiKey = apiKey
+    }
+
+    // MARK: - Web Answer Synthesis
+
+    func synthesizeWebAnswer(query: String, results: [ContextResult]) async throws -> WebAnswer {
+        guard !apiKey.isEmpty else { throw OpenAIError.webSynthesisFailed("OpenAI API key not set") }
+        guard !results.isEmpty else { throw OpenAIError.webSynthesisFailed("No search results to synthesize") }
+
+        let numberedResults = results.enumerated().map { (i, result) -> String in
+            let url: String
+            if case .web(let u) = result.source { url = u } else { url = "" }
+            return "[\(i + 1)] \(result.title)\nURL: \(url)\n\(result.snippet)"
+        }.joined(separator: "\n\n")
+
+        let systemPrompt = """
+        You are a research assistant. Answer the user's query in 2-4 concise sentences using ONLY the supplied search results.
+        Return a JSON object with this exact shape: {"answer": "<string>", "citations": [<1-based int indices of results used>]}
+        If the results don't contain enough information, say so briefly in "answer" and return an empty citations array.
+        """
+
+        let userPrompt = "Query: \(query)\n\nSearch results:\n\(numberedResults)"
+
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload: [String: Any] = [
+            "model": webAnswerModel,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ],
+            "response_format": ["type": "json_object"]
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw OpenAIError.webSynthesisFailed(String(data: data, encoding: .utf8) ?? "Unknown error")
+        }
+
+        let chatResponse = try JSONDecoder().decode(ChatResponse.self, from: data)
+        let content = chatResponse.choices.first?.message.content ?? ""
+
+        guard let contentData = content.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any] else {
+            throw OpenAIError.webSynthesisFailed("Malformed response from model")
+        }
+
+        guard let answerText = json["answer"] as? String, !answerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw OpenAIError.webSynthesisFailed("Model returned no answer")
+        }
+
+        let citationIndices: [Int] = json["citations"] as? [Int] ?? []
+
+        var seenURLs = Set<String>()
+        let citations: [WebAnswerCitation] = citationIndices.compactMap { idx in
+            let i = idx - 1
+            guard i >= 0, i < results.count else { return nil }
+            guard case .web(let url) = results[i].source else { return nil }
+            guard seenURLs.insert(url).inserted else { return nil }
+            return WebAnswerCitation(title: results[i].title, url: url)
+        }
+
+        return WebAnswer(text: answerText, citations: citations)
     }
 
     // MARK: - Summarization
@@ -428,12 +497,14 @@ enum OpenAIError: LocalizedError {
     case summarizationFailed(String)
     case chatFailed(String)
     case controlChatFailed(String)
+    case webSynthesisFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .summarizationFailed(let msg): return "Summarization failed: \(msg)"
         case .chatFailed(let msg): return "Chat failed: \(msg)"
         case .controlChatFailed(let msg): return "Control chat failed: \(msg)"
+        case .webSynthesisFailed(let msg): return "Web answer synthesis failed: \(msg)"
         }
     }
 }
