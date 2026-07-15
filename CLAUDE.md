@@ -75,13 +75,18 @@ Build must pass before every commit. There is no automated test suite.
 ### How to Invoke Sonnet
 
 ```bash
-(unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR; claude -p --model sonnet --dangerously-skip-permissions "PROMPT" 2>&1)
+(unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT; claude -p --model sonnet --dangerously-skip-permissions "PROMPT" 2>&1)
 ```
 
 For larger prompts, write to a file and pipe it:
 ```bash
-(unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR; cat /tmp/task-prompt.txt | claude -p --model sonnet --dangerously-skip-permissions 2>&1)
+(unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT; cat /tmp/task-prompt.txt | claude -p --model sonnet --dangerously-skip-permissions 2>&1)
 ```
+
+> **Do NOT unset `CLAUDE_CONFIG_DIR`.** This machine's credentials live in the
+> config dir it points to; unsetting it sends the subprocess to an
+> unauthenticated `~/.claude` and Sonnet fails with `401 Invalid authentication
+> credentials`.
 
 Always include in the prompt: which files to read, what to change, and the acceptance criteria.
 
