@@ -53,6 +53,7 @@ struct NoteEditorView: View {
     @State private var isLoadingContext = false
     @State private var contextTask: Task<Void, Never>? = nil
     @State private var lastTriggeredBody: String = ""
+    @State private var lastContextQuery: String? = nil
     @State private var showFilePicker = false
 
     var body: some View {
@@ -128,7 +129,7 @@ struct NoteEditorView: View {
                 .padding(.bottom, 8)
                 .onChange(of: note.title) { _, _ in
                     scheduleSave()
-                    refreshContext(query: buildQuery())
+                    scheduleTitleContextRefresh()
                 }
 
             tagEditorView
@@ -434,6 +435,17 @@ struct NoteEditorView: View {
         appState.saveNote(note)
     }
 
+    private func scheduleTitleContextRefresh() {
+        contextTask?.cancel()
+        contextTask = Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                refreshContext(query: buildQuery())
+            }
+        }
+    }
+
     private func scheduleContextRefresh(body: String) {
         guard body.trimmingCharacters(in: .whitespacesAndNewlines).count > 20 else { return }
         let triggerOnSentence = body.count > lastTriggeredBody.count &&
@@ -463,12 +475,21 @@ struct NoteEditorView: View {
     }
 
     private func refreshContext(query: String) {
-        let hasQuery = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasQuery = !normalizedQuery.isEmpty
         let hasTags = !note.tags.isEmpty
         guard hasTags || hasQuery else {
             internalContextResults = []
             webState = .idle
             return
+        }
+
+        let cacheKey = normalizedQuery + "\u{1}" + note.tags.sorted().joined(separator: ",")
+        if hasQuery && cacheKey == lastContextQuery {
+            return
+        }
+        if hasQuery {
+            lastContextQuery = cacheKey
         }
 
         contextTask?.cancel()
