@@ -20,12 +20,6 @@ struct SettingsView: View {
                 statusLabel(for: appState.openAIKey, purpose: "summarization, AI chat & fallback transcription")
             }
 
-            Section("AssemblyAI") {
-                SecureField("API Key", text: $appState.assemblyAIKey)
-                    .textFieldStyle(.roundedBorder)
-                statusLabel(for: appState.assemblyAIKey, purpose: "speaker diarization for system audio")
-            }
-
             Section("Brave Search") {
                 SecureField("API Key", text: $appState.braveSearchAPIKey)
                     .textFieldStyle(.roundedBorder)

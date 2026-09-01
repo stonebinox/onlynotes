@@ -1,7 +1,9 @@
 import Foundation
 import AVFoundation
 
-/// Transcribes audio using OpenAI Whisper (chunked) + GPT-4o speaker inference.
+/// Transcribes audio using OpenAI Whisper (chunked). Supports two paths:
+/// (a) single-track mic audio — caller tags speaker; no inference needed.
+/// (b) transcribe(audioURL:) — OpenAI-only path that runs GPT-4o speaker inference after transcription.
 class WhisperTranscriptionService {
     private let apiKey: String
     private let chunkDuration: TimeInterval = 720  // 12 minutes
@@ -15,15 +17,12 @@ class WhisperTranscriptionService {
 
     func transcribe(audioURL: URL) async throws -> [TranscriptSegment] {
         let raw = try await transcribeRaw(audioURL: audioURL)
-        // OpenAI-only path: dedupe chunk-overlap content before speaker inference.
-        // The hybrid path (which calls transcribeRaw directly) skips dedupe and trims
-        // overlap inside mergeSpeakerLabels instead.
+        // Dedupe chunk-overlap content before speaker inference.
         let deduped = dedupeOverlap(raw)
         return await inferSpeakers(segments: deduped)
     }
 
-    /// Transcribe without speaker inference — for use in hybrid pipeline where
-    /// speaker labels come from AssemblyAI diarization + GPT-4o post-processing.
+    /// Transcribe without speaker inference — caller is responsible for tagging speakers.
     func transcribeRaw(audioURL: URL) async throws -> [TranscriptSegment] {
         let chunks = try splitAudio(url: audioURL)
         var allSegments: [TranscriptSegment] = []
@@ -45,11 +44,6 @@ class WhisperTranscriptionService {
             try? FileManager.default.removeItem(at: chunk.url)
         }
 
-        // NOTE: do NOT run dedupeOverlap here. The hybrid merge in mergeSpeakerLabels
-        // expects each chunk's full text intact (it trims the overlap window itself by
-        // chunkDuration ratio). Global text dedupe would remove repeated short phrases
-        // like "yeah"/"okay" from later chunks too, shifting proportional slicing.
-        // The OpenAI-only path uses transcribe(audioURL:) which still dedupes.
         let merged = allSegments
 
         if let warning = partialWarning {

@@ -731,7 +731,7 @@ struct MeetingChatView: View {
                     isRunningAction = true
                     do {
                         guard let forAction = fresh() else { isRunningAction = false; return }
-                        let executor = MeetingActionExecutor(apiKey: appState.openAIKey, assemblyAIKey: appState.assemblyAIKey)
+                        let executor = MeetingActionExecutor(apiKey: appState.openAIKey)
                         let mutated = try await executor.execute(action, on: forAction)
                         note = mutated
                         appState.saveNote(mutated)

@@ -2,7 +2,6 @@ import Foundation
 
 struct MeetingActionExecutor {
     let apiKey: String
-    let assemblyAIKey: String
 
     func execute(_ action: MeetingAction, on note: Note) async throws -> Note {
         var updated = note
@@ -15,40 +14,13 @@ struct MeetingActionExecutor {
             }
             let systemURL = URL(fileURLWithPath: audioPath)
 
-            let segments: [TranscriptSegment]
-            if !assemblyAIKey.isEmpty {
-                do {
-                    // Hybrid: OpenAI transcription + AssemblyAI diarization (parallel)
-                    let whisper = WhisperTranscriptionService(apiKey: apiKey)
-                    let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
-
-                    async let transcriptTask = whisper.transcribeRaw(audioURL: systemURL)
-                    async let diarizeTask = assemblyAI.diarize(url: systemURL)
-
-                    let rawTranscript = try await transcriptTask
-                    let diarization = try? await diarizeTask
-
-                    let merged: [TranscriptSegment]
-                    if let diarization = diarization, !diarization.isEmpty {
-                        merged = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
-                    } else {
-                        merged = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
-                    }
-                    let openAI = OpenAIService(apiKey: apiKey)
-                    segments = await openAI.consolidateSpeakerTags(merged)
-                } catch {
-                    print("Hybrid retranscribe failed, falling back to OpenAI-only: \(error.localizedDescription)")
-                    let whisper = WhisperTranscriptionService(apiKey: apiKey)
-                    segments = try await whisper.transcribe(systemURL: systemURL, micURL: nil)
-                }
-            } else {
-                let whisper = WhisperTranscriptionService(apiKey: apiKey)
-                segments = try await whisper.transcribe(systemURL: systemURL, micURL: nil)
-            }
+            let openAI = OpenAIService(apiKey: apiKey)
+            let diarized = DiarizedTranscriptionService(apiKey: apiKey)
+            let rawSegments = try await diarized.transcribe(audioURL: systemURL, speakerTagOffset: 2)
+            let segments = await openAI.consolidateSpeakerTags(rawSegments, protectedTags: [0, 1])
 
             updated.meetingAttachment?.segments = segments
             updated.meetingAttachment?.speakers = [:]
-            let openAI = OpenAIService(apiKey: apiKey)
             let result = try await openAI.summarize(segments: segments, speakers: [:], notes: note.meetingAttachment?.notes ?? [])
             updated.title = result.title
             updated.meetingAttachment?.summary = result.summary

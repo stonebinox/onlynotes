@@ -98,54 +98,28 @@ class AppState: ObservableObject {
             do {
                 let openAIService = OpenAIService(apiKey: openAIKey)
 
-                let segments: [TranscriptSegment]
-                if !assemblyAIKey.isEmpty {
+                // System audio → diarized (speakerTagOffset: 2 so mic=1 never collides)
+                let diarized = DiarizedTranscriptionService(apiKey: openAIKey)
+                let whisper = WhisperTranscriptionService(apiKey: openAIKey)
+                var systemSegments = try await diarized.transcribe(audioURL: result.systemURL, speakerTagOffset: 2)
+                // Reconcile per-chunk speaker namespaces; protect 0 (warning markers) and 1 (mic).
+                systemSegments = await openAIService.consolidateSpeakerTags(systemSegments, protectedTags: [0, 1])
+
+                // Mic track → speaker 1
+                var micSegments: [TranscriptSegment] = []
+                if let micURL = result.micURL,
+                   FileManager.default.fileExists(atPath: micURL.path),
+                   let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
+                   (attrs[.size] as? Int ?? 0) > 4096 {
                     do {
-                        // Hybrid: OpenAI for transcription + AssemblyAI for speaker diarization (parallel)
-                        let whisper = WhisperTranscriptionService(apiKey: openAIKey)
-                        let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
-
-                        async let transcriptTask = whisper.transcribeRaw(audioURL: result.systemURL)
-                        async let diarizeTask = assemblyAI.diarize(url: result.systemURL)
-
-                        let rawTranscript = try await transcriptTask
-                        let diarization = try? await diarizeTask
-
-                        var systemSegments: [TranscriptSegment]
-                        if let diarization = diarization, !diarization.isEmpty {
-                            systemSegments = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
-                        } else {
-                            print("AssemblyAI diarization empty/failed, using OpenAI transcript without speaker labels")
-                            systemSegments = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
-                        }
-                        // Consolidate over-fragmented speaker IDs. Mic speaker 1 is reserved for the
-                        // local-mic track added below, so protect it from being merged into the system side.
-                        systemSegments = await openAIService.consolidateSpeakerTags(systemSegments, protectedTags: [0, 1])
-
-                        // Mic track (speaker 1)
-                        var micSegments: [TranscriptSegment] = []
-                        if let micURL = result.micURL,
-                           FileManager.default.fileExists(atPath: micURL.path),
-                           let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
-                           (attrs[.size] as? Int ?? 0) > 4096 {
-                            do {
-                                let micResult = try await whisper.transcribeRaw(audioURL: micURL)
-                                micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
-                            } catch {
-                                print("Mic transcription failed (non-fatal): \(error.localizedDescription)")
-                            }
-                        }
-
-                        segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
+                        let micResult = try await whisper.transcribeRaw(audioURL: micURL)
+                        micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
                     } catch {
-                        print("Hybrid transcription failed, falling back to OpenAI-only: \(error.localizedDescription)")
-                        let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
-                        segments = try await whisperService.transcribe(systemURL: result.systemURL, micURL: result.micURL)
+                        print("Mic transcription failed (non-fatal): \(error.localizedDescription)")
                     }
-                } else {
-                    let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
-                    segments = try await whisperService.transcribe(systemURL: result.systemURL, micURL: result.micURL)
                 }
+
+                let segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:], notes: capturedNotes)
 
                 let attachment = MeetingAttachment(
@@ -220,39 +194,13 @@ class AppState: ObservableObject {
                 let asset = AVURLAsset(url: destURL)
                 let duration = CMTimeGetSeconds(asset.duration)
 
-                // 3. Transcribe (hybrid if AssemblyAI key available)
-                let segments: [TranscriptSegment]
-                if !assemblyAIKey.isEmpty {
-                    do {
-                        let whisper = WhisperTranscriptionService(apiKey: openAIKey)
-                        let assemblyAI = AssemblyAITranscriptionService(apiKey: assemblyAIKey)
-
-                        async let transcriptTask = whisper.transcribeRaw(audioURL: destURL)
-                        async let diarizeTask = assemblyAI.diarize(url: destURL)
-
-                        let rawTranscript = try await transcriptTask
-                        let diarization = try? await diarizeTask
-
-                        let merged: [TranscriptSegment]
-                        if let diarization = diarization, !diarization.isEmpty {
-                            merged = mergeSpeakerLabels(transcriptSegments: rawTranscript, diarization: diarization)
-                        } else {
-                            merged = rawTranscript.map { var s = $0; if s.speakerTag == 1 { s.speakerTag = 2 }; return s }
-                        }
-                        let openAIService = OpenAIService(apiKey: openAIKey)
-                        segments = await openAIService.consolidateSpeakerTags(merged)
-                    } catch {
-                        print("Hybrid import failed, falling back to OpenAI-only: \(error.localizedDescription)")
-                        let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
-                        segments = try await whisperService.transcribe(audioURL: destURL)
-                    }
-                } else {
-                    let whisperService = WhisperTranscriptionService(apiKey: openAIKey)
-                    segments = try await whisperService.transcribe(audioURL: destURL)
-                }
+                // 3. Transcribe
+                let openAIService = OpenAIService(apiKey: openAIKey)
+                let diarized = DiarizedTranscriptionService(apiKey: openAIKey)
+                let rawSegments = try await diarized.transcribe(audioURL: destURL, speakerTagOffset: 2)
+                let segments = await openAIService.consolidateSpeakerTags(rawSegments, protectedTags: [0, 1])
 
                 // 4. Summarize
-                let openAIService = OpenAIService(apiKey: openAIKey)
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:])
 
                 // 5. Update note in place — preserve existing data
