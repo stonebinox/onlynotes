@@ -45,6 +45,24 @@
   button:disabled { opacity: 0.35; cursor: default; }
   #btnStart { background: #7c3aed; color: #fff; }
   #btnStop  { background: #dc2626; color: #fff; }
+  #btnMicPermission {
+    flex: none;
+    width: 100%;
+    margin-top: 10px;
+    padding: 6px 0;
+    background: #1e3a5f;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  #btnMicPermission:hover:not(:disabled) { background: #243f6b; }
+  #micStatus {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #64748b;
+  }
+  #micStatus.mic-on  { color: #4ade80; }
+  #micStatus.mic-off { color: #64748b; }
 </style>
 </head>
 <body>
@@ -54,6 +72,8 @@
   <button id="btnStart">Start</button>
   <button id="btnStop" disabled>Stop</button>
 </div>
+<button id="btnMicPermission">Enable microphone (optional)</button>
+<div id="micStatus"></div>
 <script src="popup.js"></script>
 </body>
 </html>

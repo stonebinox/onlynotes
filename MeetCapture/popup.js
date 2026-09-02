@@ -3,6 +3,8 @@
 const statusEl = document.getElementById('status');
 const btnStart = document.getElementById('btnStart');
 const btnStop = document.getElementById('btnStop');
+const micStatusEl = document.getElementById('micStatus');
+const btnMicPermission = document.getElementById('btnMicPermission');
 
 function setStatus(text, cls) {
   statusEl.textContent = text;
@@ -14,12 +16,24 @@ function setRecording(isRecording) {
   btnStop.disabled = !isRecording;
 }
 
-// Restore UI state if we were already recording
-chrome.storage.local.get('recordingTabId', ({ recordingTabId }) => {
+function updateMicStatus(granted) {
+  micStatusEl.textContent = granted
+    ? 'Mic: enabled'
+    : 'Mic: not enabled (tab audio still records)';
+  micStatusEl.className = granted ? 'mic-on' : 'mic-off';
+}
+
+// Restore UI state and mic status on popup open
+chrome.storage.local.get(['recordingTabId', 'micGranted'], ({ recordingTabId, micGranted }) => {
   if (recordingTabId) {
     setStatus('recording…', 'recording');
     setRecording(true);
   }
+  updateMicStatus(!!micGranted);
+});
+
+btnMicPermission.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('permission.html') });
 });
 
 btnStart.addEventListener('click', async () => {
@@ -32,17 +46,6 @@ btnStart.addEventListener('click', async () => {
 
   setStatus('starting…', '');
   btnStart.disabled = true;
-
-  // Request mic permission from this visible page so the offscreen doc can capture it.
-  // The grant persists for the extension origin; tracks are stopped immediately.
-  try {
-    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    micStream.getTracks().forEach(t => t.stop());
-  } catch (_) {
-    setStatus('Microphone access denied — allow mic and try again', 'error');
-    btnStart.disabled = false;
-    return;
-  }
 
   const resp = await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: tab.id });
 

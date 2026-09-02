@@ -32,14 +32,18 @@ Records (1) the Meet tab audio, (2) your local mic, and (3) a timestamped speake
 
 1. Join or start a Google Meet call in a Chrome tab.
 2. Click the **MeetCapture** toolbar icon — the popup opens.
-3. Click **Start**.
-   - You will be prompted to allow microphone access (once).
+3. *(Optional)* Click **Enable microphone (optional)** to also capture your own voice.
+   - This opens a dedicated tab that prompts for mic access.
+   - The mic track is **not required** — tab audio and the speaker timeline are always recorded regardless of mic permission.
+   - If the browser shows no prompt (mic was previously blocked), reset mic access for the extension at **chrome://settings/content/microphone**, then try again.
+   - Once granted, the popup shows **Mic: enabled** next to the button.
+4. Click **Start**.
    - The popup status changes to **recording…**
    - You should still hear all call audio normally (tab audio is routed back to the speaker).
-4. Run the meeting as usual for as long as you want to measure.
-5. Click **Stop**.
+5. Run the meeting as usual for as long as you want to measure.
+6. Click **Stop**.
    - The popup shows **saved to Downloads**.
-   - Three files appear in your Downloads folder within a few seconds.
+   - Files appear in your Downloads folder within a few seconds (`tab-audio.webm`, `timeline.json`, and `mic-audio.webm` if mic was enabled).
 
 ---
 
@@ -47,9 +51,9 @@ Records (1) the Meet tab audio, (2) your local mic, and (3) a timestamped speake
 
 | File | Contents |
 |---|---|
-| `tab-audio.webm` | Everything you hear in the Meet tab (all participants + any shared audio) |
-| `mic-audio.webm` | Your local microphone only |
-| `timeline.json` | Speaker-change events with session-relative timestamps + clock checkpoints |
+| `tab-audio.webm` | Everything you hear in the Meet tab (all participants + any shared audio) — always recorded |
+| `timeline.json` | Speaker-change events with session-relative timestamps + clock checkpoints — always recorded |
+| `mic-audio.webm` | Your local microphone only — recorded only if mic permission was granted before Start |
 
 ### timeline.json schema
 
@@ -107,6 +111,10 @@ Both audio files and the timeline share `startEpochMs` as their common epoch.
 ## Architecture notes (for debugging)
 
 ```
+permission.html / permission.js  (optional, opened via "Enable microphone" button)
+  → getUserMedia({audio:true})
+  → chrome.storage.local.set({micGranted:true})
+
 popup.js
   → chrome.runtime.sendMessage(START_RECORDING)
     → background.js (service worker)
@@ -114,9 +122,10 @@ popup.js
       → chrome.offscreen.createDocument(offscreen.html)
       → chrome.runtime.sendMessage(OFFSCREEN_START, streamId)
         → offscreen.js
-          → getUserMedia(tab stream + mic)
+          → getUserMedia(tab stream)   ← always
+          → getUserMedia(mic)          ← attempted; records micError if denied
           → AudioContext: tabSource → destination   ← keeps audio audible
-          → MediaRecorder × 2 (tab, mic)
+          → MediaRecorder × 1–2 (tab always; mic if granted)
       → chrome.tabs.sendMessage(tabId, START_OBSERVATION)
         → content.js: starts MutationObserver + 250ms poll
 
