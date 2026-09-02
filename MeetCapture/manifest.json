@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "MeetCapture",
+  "version": "0.1.0",
+  "description": "Measure Google Meet UI speaker evidence quality — records tab audio, mic, and speaker timeline.",
+  "minimum_chrome_version": "116",
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MeetCapture"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "downloads"
+  ],
+
+  "host_permissions": [
+    "https://meet.google.com/*"
+  ]
+}
