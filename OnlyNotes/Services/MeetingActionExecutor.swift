@@ -16,8 +16,7 @@ struct MeetingActionExecutor {
 
             let openAI = OpenAIService(apiKey: apiKey)
             let diarized = DiarizedTranscriptionService(apiKey: apiKey)
-            let rawSegments = try await diarized.transcribe(audioURL: systemURL, speakerTagOffset: 2)
-            let segments = await openAI.consolidateSpeakerTags(rawSegments, protectedTags: [0, 1])
+            let segments = try await diarized.transcribe(audioURL: systemURL, speakerTagOffset: 2)
 
             updated.meetingAttachment?.segments = segments
             updated.meetingAttachment?.speakers = [:]

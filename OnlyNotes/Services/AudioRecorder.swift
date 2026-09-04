@@ -26,6 +26,11 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
     private var startTime: Date?
     private let writeLock = NSLock()
 
+    // PTS-anchored clock alignment — guards all mutations with writeLock
+    private var sessionStartPTSSeconds: Double? = nil
+    private var systemFramesWritten: Int64 = 0
+    private var micFramesWritten: Int64 = 0
+
     // MARK: - Public API
 
     func startRecording() throws {
@@ -47,6 +52,9 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
             interleaved: true
         )
 
+        sessionStartPTSSeconds = nil
+        systemFramesWritten = 0
+        micFramesWritten = 0
         startTime = Date()
         isRecording = true
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -108,6 +116,11 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
             try scStream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: DispatchQueue(label: "audio.mic"))
         }
 
+        writeLock.lock()
+        sessionStartPTSSeconds = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
+        systemFramesWritten = 0
+        micFramesWritten = 0
+        writeLock.unlock()
         try await scStream.startCapture()
         stream = scStream
     }
@@ -203,12 +216,49 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
             }
         }
         writeLock.lock()
+        let ptsSeconds = CMTimeGetSeconds(sampleBuffer.presentationTimeStamp)
+        let ptsValid = !ptsSeconds.isNaN && !ptsSeconds.isInfinite
+        if ptsValid, let anchor = sessionStartPTSSeconds {
+            let expectedFrame = Int64(max(0.0, (ptsSeconds - anchor) * 16000.0))
+            let framesWritten = isMic ? micFramesWritten : systemFramesWritten
+            if expectedFrame > framesWritten {
+                // Bound the pad by wall-clock elapsed time so a corrupt PTS can't allocate unbounded silence.
+                let elapsedSeconds = startTime.map { Date().timeIntervalSince($0) } ?? 0
+                let maxFrames = Int64((elapsedSeconds + 5.0) * 16000.0)
+                let rawGap = expectedFrame - framesWritten
+                let padFrames = max(0, min(rawGap, maxFrames - framesWritten))
+                if padFrames > 0 {
+                    writeSilenceFrames(padFrames, to: isMic ? micAudioFile : systemAudioFile)
+                    if isMic { micFramesWritten += padFrames } else { systemFramesWritten += padFrames }
+                }
+            }
+        }
         if isMic {
             try? micAudioFile?.write(from: outBuffer)
+            micFramesWritten += Int64(outBuffer.frameLength)
         } else {
             try? systemAudioFile?.write(from: outBuffer)
+            systemFramesWritten += Int64(outBuffer.frameLength)
         }
         writeLock.unlock()
+    }
+
+    private func writeSilenceFrames(_ count: Int64, to file: AVAudioFile?) {
+        guard let file = file, count > 0 else { return }
+        guard let int16Format = AVAudioFormat(commonFormat: .pcmFormatInt16,
+                                              sampleRate: 16000, channels: 1, interleaved: true) else { return }
+        let blockSize: AVAudioFrameCount = 16000
+        var remaining = count
+        while remaining > 0 {
+            let thisBlock = AVAudioFrameCount(min(Int64(blockSize), remaining))
+            guard let buf = AVAudioPCMBuffer(pcmFormat: int16Format, frameCapacity: thisBlock) else { break }
+            buf.frameLength = thisBlock
+            if let ptr = buf.int16ChannelData?[0] {
+                memset(ptr, 0, Int(thisBlock) * MemoryLayout<Int16>.size)
+            }
+            try? file.write(from: buf)
+            remaining -= Int64(thisBlock)
+        }
     }
 
     // MARK: - Teardown
@@ -220,6 +270,9 @@ class AudioRecorder: NSObject, ObservableObject, SCStreamDelegate, SCStreamOutpu
         writeLock.lock()
         systemAudioFile = nil
         micAudioFile = nil
+        sessionStartPTSSeconds = nil
+        systemFramesWritten = 0
+        micFramesWritten = 0
         writeLock.unlock()
         timer?.invalidate()
         timer = nil

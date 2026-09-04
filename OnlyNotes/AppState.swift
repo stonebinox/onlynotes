@@ -101,9 +101,7 @@ class AppState: ObservableObject {
                 // System audio → diarized (speakerTagOffset: 2 so mic=1 never collides)
                 let diarized = DiarizedTranscriptionService(apiKey: openAIKey)
                 let whisper = WhisperTranscriptionService(apiKey: openAIKey)
-                var systemSegments = try await diarized.transcribe(audioURL: result.systemURL, speakerTagOffset: 2)
-                // Reconcile per-chunk speaker namespaces; protect 0 (warning markers) and 1 (mic).
-                systemSegments = await openAIService.consolidateSpeakerTags(systemSegments, protectedTags: [0, 1])
+                let systemSegments = try await diarized.transcribe(audioURL: result.systemURL, speakerTagOffset: 2)
 
                 // Mic track → speaker 1
                 var micSegments: [TranscriptSegment] = []
@@ -197,8 +195,7 @@ class AppState: ObservableObject {
                 // 3. Transcribe
                 let openAIService = OpenAIService(apiKey: openAIKey)
                 let diarized = DiarizedTranscriptionService(apiKey: openAIKey)
-                let rawSegments = try await diarized.transcribe(audioURL: destURL, speakerTagOffset: 2)
-                let segments = await openAIService.consolidateSpeakerTags(rawSegments, protectedTags: [0, 1])
+                let segments = try await diarized.transcribe(audioURL: destURL, speakerTagOffset: 2)
 
                 // 4. Summarize
                 let summary = try await openAIService.summarize(segments: segments, speakers: [:])

@@ -8,9 +8,7 @@ class DiarizedTranscriptionService {
 
     // MARK: - Constants
 
-    /// Files shorter than this AND smaller than singleCallMaxFileSize go in one request.
-    private static let singleCallMaxDuration: TimeInterval = 540   // 9 min
-    /// Files smaller than this AND shorter than singleCallMaxDuration go in one request.
+    /// Files smaller than this go in one request; larger use the silence-split chunked path.
     private static let singleCallMaxFileSize: Int = 24 * 1024 * 1024  // 24 MB
     /// Target chunk length when splitting is necessary (~5.75 min keeps well under limits).
     private static let chunkTargetDuration: TimeInterval = 345
@@ -34,30 +32,46 @@ class DiarizedTranscriptionService {
     // MARK: - Public
 
     /// Transcribe `audioURL` and return segments with speaker tags starting at `speakerTagOffset`.
-    /// Short/small recordings make exactly one API request. Longer ones are silence-split into
-    /// chunks with disjoint per-chunk speaker tag namespaces; the caller is responsible for
-    /// running consolidateSpeakerTags afterwards to reconcile them.
+    /// Transcodes to compact AAC first so essentially any recording under ~1 hour fits in one API
+    /// call with a consistent speaker namespace. Falls back to silence-split chunking only when the
+    /// transcoded file exceeds the 24 MB limit.
     func transcribe(audioURL: URL, speakerTagOffset: Int) async throws -> [TranscriptSegment] {
         let asset = AVURLAsset(url: audioURL)
-        let duration = CMTimeGetSeconds(asset.duration)
-        guard duration > 0 else { throw DiarizedError.invalidAudio }
+        let duration = try await asset.load(.duration)
+        guard CMTimeGetSeconds(duration) > 0 else { throw DiarizedError.invalidAudio }
 
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: audioURL.path))?[.size] as? Int ?? 0
+        // Transcode to compact mono AAC at 32 kbps — ~0.24 MB/min, so 60 min ≈ 14 MB, 90 min ≈ 21 MB, ~105 min before the 24 MB limit.
+        var workURL: URL = audioURL
+        var didTranscode = false
+        do {
+            workURL = try await transcodeToMonoAAC(sourceURL: audioURL)
+            didTranscode = true
+            let sz = (try? FileManager.default.attributesOfItem(atPath: workURL.path))?[.size] as? Int ?? 0
+            print("DiarizedTranscriptionService: transcode ok, size=\(sz / 1024)KB")
+        } catch {
+            print("DiarizedTranscriptionService: transcode failed (\(error.localizedDescription)), using original file")
+        }
+        defer { if didTranscode { try? FileManager.default.removeItem(at: workURL) } }
 
-        if duration <= Self.singleCallMaxDuration && fileSize < Self.singleCallMaxFileSize {
-            print("DiarizedTranscriptionService: single call (duration=\(Int(duration))s, size=\(fileSize / 1024)KB)")
-            let segments = try await transcribeChunk(url: audioURL, startOffset: 0, speakerTagBase: speakerTagOffset)
+        let workSize = (try? FileManager.default.attributesOfItem(atPath: workURL.path))?[.size] as? Int ?? 0
+
+        if workSize < Self.singleCallMaxFileSize {
+            print("DiarizedTranscriptionService: single call (size=\(workSize / 1024)KB)")
+            let segments = try await transcribeChunk(url: workURL, startOffset: 0, speakerTagBase: speakerTagOffset)
             return segments.sorted { $0.startTime < $1.startTime }
         }
 
-        print("DiarizedTranscriptionService: chunked path (duration=\(Int(duration))s, size=\(fileSize / 1024)KB)")
+        print("DiarizedTranscriptionService: chunked path (size=\(workSize / 1024)KB)")
+
+        let workAsset = AVURLAsset(url: workURL)
+        let workDuration = CMTimeGetSeconds(try await workAsset.load(.duration))
 
         let cuts: [(start: TimeInterval, end: TimeInterval)]
         do {
-            cuts = try computeSilenceCuts(url: audioURL, duration: duration)
+            cuts = try computeSilenceCuts(url: workURL, duration: workDuration)
         } catch {
             print("DiarizedTranscriptionService: silence detection failed (\(error.localizedDescription)), using uniform cuts")
-            cuts = uniformCuts(duration: duration)
+            cuts = uniformCuts(duration: workDuration)
         }
 
         // Unique temp directory per job to avoid /tmp/chunk_N.m4a collisions
@@ -73,16 +87,13 @@ class DiarizedTranscriptionService {
                 end: CMTime(seconds: cut.end, preferredTimescale: 44100)
             )
             do {
-                try exportChunk(asset: asset, timeRange: range, to: chunkURL)
-                // Each chunk gets a non-overlapping tag namespace so cross-chunk speaker labels
-                // never collide before consolidateSpeakerTags reconciles them.
+                try exportChunk(asset: workAsset, timeRange: range, to: chunkURL)
                 let speakerBase = speakerTagOffset + chunkIndex * Self.speakerNamespaceStride
                 let segments = try await transcribeChunk(url: chunkURL, startOffset: cut.start, speakerTagBase: speakerBase)
                 allSegments.append(contentsOf: segments)
                 print("DiarizedTranscriptionService: chunk \(chunkIndex + 1)/\(cuts.count) ok, \(segments.count) segments")
             } catch {
                 print("DiarizedTranscriptionService: chunk \(chunkIndex + 1)/\(cuts.count) failed: \(error.localizedDescription)")
-                // Partial transcript is better than nothing; continue with remaining chunks.
             }
         }
 
@@ -91,6 +102,68 @@ class DiarizedTranscriptionService {
         }
 
         return allSegments.sorted { $0.startTime < $1.startTime }
+    }
+
+    // MARK: - AAC Transcode
+
+    private func transcodeToMonoAAC(sourceURL: URL) async throws -> URL {
+        let outURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("diarize_\(UUID().uuidString).m4a")
+
+        let asset = AVURLAsset(url: sourceURL)
+        let tracks = try await asset.loadTracks(withMediaType: .audio)
+        guard let assetTrack = tracks.first else { throw DiarizedError.invalidAudio }
+
+        let reader = try AVAssetReader(asset: asset)
+        let readerOutput = AVAssetReaderTrackOutput(track: assetTrack, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16000.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false
+        ])
+        reader.add(readerOutput)
+
+        let writer = try AVAssetWriter(outputURL: outURL, fileType: .m4a)
+        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 16000.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 32000
+        ])
+        writer.add(writerInput)
+
+        guard reader.startReading() else {
+            throw reader.error ?? DiarizedError.exportFailed
+        }
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let queue = DispatchQueue(label: "diarize.transcode")
+            writerInput.requestMediaDataWhenReady(on: queue) {
+                while writerInput.isReadyForMoreMediaData {
+                    guard let buf = readerOutput.copyNextSampleBuffer() else {
+                        writerInput.markAsFinished()
+                        writer.finishWriting {
+                            if writer.status == .completed {
+                                continuation.resume()
+                            } else {
+                                let err = writer.error ?? reader.error ?? DiarizedError.exportFailed
+                                try? FileManager.default.removeItem(at: outURL)
+                                continuation.resume(throwing: err)
+                            }
+                        }
+                        return
+                    }
+                    writerInput.append(buf)
+                }
+            }
+        }
+
+        return outURL
     }
 
     // MARK: - API Call
