@@ -1,46 +1,24 @@
 # OnlyNotes
 
-A local-first macOS meeting notes app built with Swift + SwiftUI.
+A macOS meeting-notes app built with Swift + SwiftUI. It records meeting audio, transcribes it with speaker diarization, and generates summaries and per-meeting AI chat. Notes and audio are **stored locally**; audio, transcripts and note text are **processed by cloud APIs** (OpenAI, Brave Search).
 
-## Project Overview
+## Project Knowledge — Read Before Planning
 
-OnlyNotes records meeting audio, transcribes it with speaker diarization via Google Cloud Speech-to-Text, and generates summaries + AI chat via OpenAI GPT-4o. All data stays local on the user's device.
+Project facts live in **[onlynotes-local/](onlynotes-local/README.md)**, not in this file. Before planning or reviewing substantive work, read:
 
-## Tech Stack
+1. `onlynotes-local/README.md` — reading order and source-of-truth rules
+2. `onlynotes-local/current-state.md` — what exists and what is unverified
+3. The relevant `onlynotes-local/systems/*.md` and `onlynotes-local/decisions/` — don't re-decide settled things
 
-- **Language:** Swift 5
-- **UI:** SwiftUI (macOS 14+)
-- **Audio:** AVAudioEngine (16kHz mono WAV, drop-resistant with AVAudioEngineConfigurationChange)
-- **Transcription:** OpenAI Whisper (chunked, verbose_json) + GPT-4o speaker inference
-- **AI:** OpenAI GPT-4o (summarization, AI chat per meeting, speaker diarization)
-- **Storage:** JSON file in ~/Library/Application Support/OnlyNotes/
-- **Issue Tracking:** bd (beads)
+The knowledge base is a starting point, not ground truth: verify claims against the code, and fix a doc when it is stale.
 
-## Project Structure
-
-```
-OnlyNotes/
-├── OnlyNotes.xcodeproj/
-├── OnlyNotes/
-│   ├── OnlyNotesApp.swift       # App entry point, menu bar + window scenes
-│   ├── AppState.swift           # Shared app state + recorder + processing pipeline
-│   ├── Info.plist
-│   ├── OnlyNotes.entitlements
-│   ├── Models/
-│   │   ├── Meeting.swift        # Meeting model + ChatMessage
-│   │   └── TranscriptSegment.swift
-│   ├── Services/
-│   │   ├── AudioRecorder.swift  # AVAudioEngine recording, drop detection
-│   │   ├── GoogleSpeechService.swift  # GCS upload + STT transcription
-│   │   ├── OpenAIService.swift  # Summarization + AI chat
-│   │   └── MeetingStore.swift   # JSON persistence
-│   └── Views/
-│       ├── ContentView.swift
-│       ├── MeetingListView.swift
-│       ├── MeetingDetailView.swift  # Summary/speakers/transcript/chat/playback/export
-│       ├── MenuBarView.swift
-│       └── SettingsView.swift
-```
+| What | Where |
+|------|-------|
+| Tasks and task history | `bd` |
+| Architecture, state, constraints, decisions | `onlynotes-local/` |
+| Claude's role and workflow | this file |
+| Codex's role and review rules | `AGENTS.md` |
+| The user's working preferences for Claude | Claude memory |
 
 ## Build
 
@@ -59,7 +37,7 @@ Build must pass before every commit. There is no automated test suite.
 1. **Have I kicked off Codex co-scoping?** → If no: `codex exec` FIRST, before reading code or planning.
 2. **Am I about to edit a source file directly?** → If yes: STOP. Delegate to Sonnet via CLI.
 3. **Has Sonnet just finished?** → If yes: kick off Codex review FIRST, before building or committing.
-4. **Am I about to commit?** → If yes: confirm Codex review passed with zero BLOCKING issues AND build passes.
+4. **Am I about to commit?** → If yes: confirm Codex review passed with zero BLOCKING issues AND build passes AND `onlynotes-local/` reflects the change.
 
 ---
 
@@ -67,7 +45,7 @@ Build must pass before every commit. There is no automated test suite.
 
 ### HARD RULE: Claude Never Codes
 
-**Claude MUST NOT write source code directly.** All code changes go through Sonnet, invoked as a CLI subprocess. The ONLY files Claude may edit directly are documentation: `CLAUDE.md`, `AGENTS.md`, memory files.
+**Claude MUST NOT write source code directly.** All code changes go through Sonnet, invoked as a CLI subprocess. The ONLY files Claude may edit directly are documentation: `CLAUDE.md`, `AGENTS.md`, `onlynotes-local/`, memory files.
 
 - **Claude:** analyze, plan, orchestrate, review, commit
 - **Sonnet (via CLI):** write and edit Swift source files
@@ -88,7 +66,7 @@ For larger prompts, write to a file and pipe it:
 > unauthenticated `~/.claude` and Sonnet fails with `401 Invalid authentication
 > credentials`.
 
-Always include in the prompt: which files to read, what to change, and the acceptance criteria.
+Always include in the prompt: which files to read, what to change, and the acceptance criteria. When the change alters behaviour, architecture or a constraint, tell Sonnet which `onlynotes-local/` docs to update in the same change.
 
 ### Four-Phase Workflow
 
@@ -108,6 +86,8 @@ codex exec "PLAIN DESCRIPTION OF WHAT WE WANT TO ACHIEVE. Explore the codebase a
 - **NO approach hints.** Do not suggest an implementation strategy. Codex must form its own view.
 - **NO pre-digested context.** Don't summarise what you already know. Give Codex a clean slate.
 - The goal is a genuine independent second opinion — a pair programmer who might catch what you missed, not a mirror that confirms what you already think.
+
+Codex reads `onlynotes-local/` on its own per `AGENTS.md`, and is told to verify it against the code. That is not a hint from Claude; don't point Codex at specific KB docs in the prompt.
 
 After reading Codex's output, Claude reconciles findings with its own thinking, resolves any disagreements with the user if needed, then creates the bd task with the consolidated plan.
 
@@ -135,6 +115,7 @@ codex exec "Review the latest implementation in the OnlyNotes codebase at ~/Proj
 - Claude addresses BLOCKING issues via Sonnet CLI
 - Re-invoke Codex review if blocking issues were fixed
 - NON-BLOCKING issues become new bd tasks
+- Before closing the bd task, run the extraction checklist in `onlynotes-local/process/documentation-rules.md`
 
 ### Codex CLI Notes
 
@@ -149,8 +130,9 @@ codex exec "Review the latest implementation in the OnlyNotes codebase at ~/Proj
 - Conventional commits: `<type>: <subject>` with optional body
 - Types: `feat`, `fix`, `refactor`, `docs`, `style`, `chore`
 - **NO AI ATTRIBUTION** — never add "Co-authored-by: Claude" or similar
-- **Never push without explicit user consent**
+- **Never push without explicit user consent** — ask before every `git push` and `bd dolt push`; consent does not carry over
 - **Build must pass before every commit**
+- **Update `onlynotes-local/` in the same commit** as the code change it describes
 - Commit at meaningful milestones, not in large batches
 
 ## Task Management (bd)
@@ -164,14 +146,6 @@ bd update OnlyNotes-xxx --status in_progress
 bd close OnlyNotes-xxx                # Mark complete
 bd sync                               # Sync before git ops
 ```
-
-## Key Design Decisions
-
-- **No App Sandbox** — simplifies mic access and file storage for personal use
-- **LSUIElement = YES** — menu bar app, no dock icon
-- **JSON storage** — flat file, no Core Data overhead
-- **No Google Cloud** — transcription is fully OpenAI (Whisper + GPT-4o), no GCS
-- **Local audio files kept** — for playback
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
@@ -192,31 +166,23 @@ bd close <id>         # Complete work
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Durable project facts go in `onlynotes-local/`; the user's working preferences go in Claude memory; `bd remember` is for short cross-session notes the beads tooling surfaces
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
+**When ending a work session**, complete these steps:
 
 1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
+2. **Run quality gates** (if code changed) - Build
 3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+4. **Commit** - All changes committed locally
+5. **Ask before pushing** - Ask the user, every time, before running:
    ```bash
    git pull --rebase
    bd dolt push
    git push
-   git status  # MUST show "up to date with origin"
+   git status  # should show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+   If the user approves and a push fails, resolve and retry.
+6. **Hand off** - Provide context for next session, including anything left unpushed
 <!-- END BEADS INTEGRATION -->

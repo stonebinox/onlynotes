@@ -10,9 +10,13 @@ You are always invoked by Claude via `codex exec --sandbox danger-full-access -o
 
 ## What is OnlyNotes?
 
-A local-first macOS meeting notes app. Records meeting audio (mic + system audio), transcribes via OpenAI Whisper (chunked for long recordings), infers speaker labels with GPT-4o, then generates summaries + AI chat. No Google Cloud — the full pipeline runs on a single OpenAI API key. All data stays local.
+A macOS meeting-notes app (Swift 5, SwiftUI, macOS 14+) with a Chrome extension proof of concept in `MeetCapture/`. Notes and audio are stored locally; audio, transcripts and note text are processed by OpenAI and Brave Search.
 
-**Stack:** Swift 5, SwiftUI, AVAudioEngine, OpenAI Whisper + GPT-4o, JSON file storage.
+## Project Knowledge
+
+Durable project facts — current state, system docs, constraints, decisions, open questions, known issues — live in **[onlynotes-local/](onlynotes-local/README.md)**. Start with its `README.md`.
+
+**Treat it as a lead, not as ground truth.** It may be stale. Verify every claim you rely on against the code, git history and `bd`. When the knowledge base and the code disagree, the code wins — report the discrepancy as a finding.
 
 ---
 
@@ -20,12 +24,13 @@ A local-first macOS meeting notes app. Records meeting audio (mic + system audio
 
 Claude gives you a plain description of what we want to achieve — nothing more. Your job is to form a fully independent assessment:
 
-1. **Explore the codebase yourself** — `find` or `ls` to discover relevant files; read them directly. Do not rely on anything Claude told you about which files matter.
-2. **Form your own view of the right approach** — don't assume Claude's framing is correct.
+1. **Explore the codebase yourself** — read `onlynotes-local/` for orientation, then `find` or `ls` to discover relevant files and read them directly. Do not rely on anything Claude told you about which files matter.
+2. **Form your own view of the right approach** — don't assume Claude's framing is correct, and don't assume a past decision in `onlynotes-local/decisions/` still holds if the code or constraints have changed. Say so if you think one should be revisited.
 3. **Challenge assumptions** — what could go wrong? What edge cases exist?
 4. **Suggest alternatives** — is there a simpler or more robust path?
 5. **Define acceptance criteria** — what does "done" look like?
 6. **Flag risks** — API surface changes, memory management, error handling gaps, Swift gotchas
+7. **Name the docs to update** — which `onlynotes-local/` files the change will make stale
 
 **There is no bd task yet at this stage.** Claude creates it after reading your output. Be thorough — your independent perspective is the entire point. A finding Claude missed is more valuable than confirming what Claude already knew.
 
@@ -48,9 +53,10 @@ Claude has implemented something via Sonnet. Your job is to review it cold:
    - Over-engineering beyond scope
    - Unused code or placeholder comments left in
    - Error handling — all API calls must handle failure gracefully
+   - Knowledge drift — `onlynotes-local/` docs made stale by the change and not updated
 6. **Verify the build** — run `xcodebuild -scheme OnlyNotes -configuration Debug build` from `~/Projects/OnlyNotes`
 7. **Categorize each finding:**
-   - **BLOCKING** — Must fix before commit (bugs, missed requirements, build failures, crashes)
+   - **BLOCKING** — Must fix before commit (bugs, missed requirements, build failures, crashes, docs that now state something false)
    - **NON-BLOCKING** — Follow-up task (style nits, minor refactors, nice-to-haves)
 8. **Approve or request changes** — no rubber-stamping. If you find nothing wrong, say so explicitly and why.
 
@@ -66,35 +72,10 @@ Claude has implemented something via Sonnet. Your job is to review it cold:
 - **Build check:** `xcodebuild -scheme OnlyNotes -configuration Debug build` (no automated tests)
 - **No over-engineering** — minimal code for current requirements
 - **No unused code** — no placeholder comments, no dead functions
+- **Docs move with code** — `onlynotes-local/` is updated in the same commit as the change it describes
+- **Never push** — pushing is the user's call, made through Claude
 
----
-
-## Key Directories
-
-```
-OnlyNotes/
-├── CLAUDE.md                  # Claude's orchestration rules
-├── AGENTS.md                  # You are here
-├── .beads/                    # bd task database
-├── OnlyNotes.xcodeproj/
-└── OnlyNotes/
-    ├── AppState.swift          # Shared state + recorder + processing pipeline
-    ├── Models/
-    │   ├── Meeting.swift       # Meeting + ChatMessage models
-    │   └── TranscriptSegment.swift
-    ├── Services/
-    │   ├── AudioRecorder.swift
-    │   ├── WhisperTranscriptionService.swift
-    │   ├── OpenAIService.swift
-    │   ├── EmbeddingService.swift
-    │   ├── BraveSearchService.swift
-    │   └── NoteStore.swift
-    └── Views/
-        ├── MeetingListView.swift
-        ├── MeetingDetailView.swift
-        ├── MenuBarView.swift
-        └── SettingsView.swift
-```
+For the source layout, see `onlynotes-local/system-map.md`.
 
 ---
 
@@ -109,16 +90,6 @@ bd update OnlyNotes-xxx --status in_progress
 bd close OnlyNotes-xxx
 bd sync                        # Sync before git ops
 ```
-
-## Landing the Plane (Session Completion)
-
-When ending a work session, ALL steps are MANDATORY:
-
-1. File issues for remaining work (`bd create`)
-2. Run quality gate: `xcodebuild -scheme OnlyNotes -configuration Debug build`
-3. Update issue status (`bd close <id>`)
-4. Sync: `bd sync`
-5. Hand off context for next session
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
@@ -138,31 +109,13 @@ bd close <id>         # Complete work
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Durable project facts go in `onlynotes-local/`; `bd remember` is for short cross-session notes the beads tooling surfaces
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+Codex does not commit or push. When finishing a pair or review run:
 
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+1. Report findings to the output file
+2. File `bd` issues only if Claude's prompt asked you to
+3. Leave git state unchanged
 <!-- END BEADS INTEGRATION -->
