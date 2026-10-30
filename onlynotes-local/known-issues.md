@@ -11,8 +11,8 @@ One line each: symptom → impact. Details live in the bd task.
 | Issue | Symptom → impact |
 |---|---|
 | OnlyNotes-rfn | Mic WAV ~15 dB quieter than system WAV → Speaker 1 transcript garbled/unreliable |
-| OnlyNotes-1b2 | Crackling on playback (suspected: new `AVAudioConverter` per sample buffer) → possible ASR degradation |
-| OnlyNotes-84t | `AudioRecorder` swallows conversion/write failures (`try?`, unchecked converter status) → silent audio loss |
+| OnlyNotes-1b2 | Crackling on playback → possible ASR degradation. **Addressed by OnlyNotes-awy.1** (cached converter per track, limiter removed); pending real-use verification, not yet confirmed fixed |
+| OnlyNotes-84t | `AudioRecorder` swallowed conversion/write failures → silent audio loss. **Addressed by OnlyNotes-awy.1** (damage counted and surfaced as `processingError`); pending real-use verification, not yet confirmed fixed |
 | No task | SCStream stop mid-recording ends the session with a notification; no resume → recording lost from that point |
 
 ## Transcription and diarization

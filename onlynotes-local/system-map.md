@@ -12,7 +12,7 @@ Menu bar / MenuBarView ── AppState.startRecording
    ▼
 AudioRecorder (SCStream, display-wide system audio + mic on macOS 15+)
    ├── recording_<ts>.wav        system audio, 16 kHz mono Int16
-   └── recording_<ts>_mic.wav    mic, 16 kHz mono Int16 (PTS-aligned silence padding)
+   └── recording_<ts>_mic.wav    mic, 16 kHz mono Int16 (no silence padding by default; PTS padding is off, see systems/recording.md)
    ▼  AppState.stopAndProcess
    ├── system WAV → DiarizedTranscriptionService  → segments, tags 2…
    │      (AAC 32 kbps transcode → one gpt-4o-transcribe-diarize call if < 24 MB, else silence-split chunks)
@@ -32,7 +32,7 @@ Downstream of storage:
 - Note editor context panel: tags + embeddings + Brave search → OpenAI synthesis.
 - Import: `AppState.importAudio` copies the file to `ImportedAudio/`, runs diarization + summary, updates the existing note.
 
-On any processing error `stopAndProcess` still saves a note (title `Meeting <date>`) with the system audio path and no transcript, and shows the error.
+On a processing error after recording stopped, `stopAndProcess` still saves a note (title `Meeting <date>`) with the system audio path and no transcript, and shows the error. The stop-before-capture / failed-startup case is the exception: it sets `processingError` and saves no note.
 
 ## Path B — MeetCapture (POC, not connected)
 

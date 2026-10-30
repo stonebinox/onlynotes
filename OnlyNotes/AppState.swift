@@ -25,17 +25,17 @@ class AppState: ObservableObject {
     let recorder = AudioRecorder()
     private var cancellables = Set<AnyCancellable>()
 
-    var isRecording: Bool { recorder.isRecording }
+    @MainActor var isRecording: Bool { recorder.isRecording }
 
-    init() {
+    @MainActor init() {
         NoteStore.shared.migrateIfNeeded()
 
         if let err = NoteStore.shared.migrationError {
             processingError = err
         }
 
-        recorder.onUnexpectedStop = { [weak self] message in
-            self?.processingError = message ?? "Recording stopped unexpectedly. Check audio permissions and try again."
+        recorder.onRecordingFinished = { [weak self] result, message in
+            self?.recordingFinished(result, message: message)
         }
         recorder.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
@@ -72,7 +72,7 @@ class AppState: ObservableObject {
         loadNotes()
     }
 
-    func addLiveNote() {
+    @MainActor func addLiveNote() {
         let text = liveNoteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let note = MeetingNote(timestampOffset: recorder.elapsedTime, text: text)
@@ -80,7 +80,7 @@ class AppState: ObservableObject {
         liveNoteDraft = ""
     }
 
-    func startRecording() throws {
+    @MainActor func startRecording() throws {
         processingError = nil
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
@@ -89,82 +89,102 @@ class AppState: ObservableObject {
         try recorder.startRecording()
     }
 
-    func stopAndProcess(onNoteSaved: ((Note) -> Void)? = nil) {
-        guard let result = recorder.stopRecording() else { return }
+    @MainActor private var pendingOnNoteSaved: ((Note) -> Void)?
+
+    @MainActor func stopAndProcess(onNoteSaved: ((Note) -> Void)? = nil) {
+        guard recorder.isRecording else { return }
         isProcessing = true
+        pendingOnNoteSaved = pendingOnNoteSaved ?? onNoteSaved
+        recorder.stopRecording()
+    }
+
+    /// The single exit for every recording (user stop, stream error, startup failure).
+    @MainActor private func recordingFinished(_ result: RecordingResult?, message: String?) {
         let capturedNotes = liveNotes
-
+        liveNotes = []
+        liveNoteDraft = ""
+        let onNoteSaved = pendingOnNoteSaved
+        pendingOnNoteSaved = nil
+        guard let result else {
+            processingError = message
+            isProcessing = false
+            return
+        }
+        isProcessing = true
         Task {
-            do {
-                let openAIService = OpenAIService(apiKey: openAIKey)
+            await process(result, notes: capturedNotes, extraWarning: message, onNoteSaved: onNoteSaved)
+        }
+    }
 
-                // System audio → diarized (speakerTagOffset: 2 so mic=1 never collides)
-                let diarized = DiarizedTranscriptionService(apiKey: openAIKey)
-                let whisper = WhisperTranscriptionService(apiKey: openAIKey)
-                let systemSegments = try await diarized.transcribe(audioURL: result.systemURL, speakerTagOffset: 2)
+    /// Transcribes, summarizes and saves a note for a finalized recording; saves a fallback note on error.
+    private func process(_ result: RecordingResult, notes: [MeetingNote], extraWarning: String?, onNoteSaved: ((Note) -> Void)?) async {
+        let warnings = [extraWarning, result.warningText].compactMap { $0 }
+        do {
+            let openAIService = OpenAIService(apiKey: openAIKey)
 
-                // Mic track → speaker 1
-                var micSegments: [TranscriptSegment] = []
-                if let micURL = result.micURL,
-                   FileManager.default.fileExists(atPath: micURL.path),
-                   let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
-                   (attrs[.size] as? Int ?? 0) > 4096 {
-                    do {
-                        let micResult = try await whisper.transcribeRaw(audioURL: micURL)
-                        micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
-                    } catch {
-                        print("Mic transcription failed (non-fatal): \(error.localizedDescription)")
-                    }
+            // System audio → diarized (speakerTagOffset: 2 so mic=1 never collides)
+            let diarized = DiarizedTranscriptionService(apiKey: openAIKey)
+            let whisper = WhisperTranscriptionService(apiKey: openAIKey)
+            let systemSegments = try await diarized.transcribe(audioURL: result.systemURL, speakerTagOffset: 2)
+
+            // Mic track → speaker 1
+            var micSegments: [TranscriptSegment] = []
+            if let micURL = result.micURL,
+               FileManager.default.fileExists(atPath: micURL.path),
+               let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
+               (attrs[.size] as? Int ?? 0) > 4096 {
+                do {
+                    let micResult = try await whisper.transcribeRaw(audioURL: micURL)
+                    micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
+                } catch {
+                    print("Mic transcription failed (non-fatal): \(error.localizedDescription)")
                 }
+            }
 
-                let segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
-                let summary = try await openAIService.summarize(segments: segments, speakers: [:], notes: capturedNotes)
+            let segments = (systemSegments + micSegments).sorted { $0.startTime < $1.startTime }
+            let summary = try await openAIService.summarize(segments: segments, speakers: [:], notes: notes)
 
-                let attachment = MeetingAttachment(
-                    segments: segments,
-                    summary: summary.summary,
-                    actionItems: summary.actionItems,
-                    duration: result.duration,
-                    audioFilePath: result.systemURL.path,
-                    notes: capturedNotes
-                )
-                let note = Note(
-                    title: summary.title,
-                    createdAt: Date(),
-                    updatedAt: Date(),
-                    meetingAttachment: attachment
-                )
+            let attachment = MeetingAttachment(
+                segments: segments,
+                summary: summary.summary,
+                actionItems: summary.actionItems,
+                duration: result.duration,
+                audioFilePath: result.systemURL.path,
+                notes: notes
+            )
+            let note = Note(
+                title: summary.title,
+                createdAt: Date(),
+                updatedAt: Date(),
+                meetingAttachment: attachment
+            )
 
-                NoteStore.shared.save(note)
+            NoteStore.shared.save(note)
 
-                await MainActor.run {
-                    self.loadNotes()
-                    self.isProcessing = false
-                    self.liveNotes = []
-                    self.liveNoteDraft = ""
-                    onNoteSaved?(note)
-                }
-            } catch {
-                let attachment = MeetingAttachment(
-                    duration: result.duration,
-                    audioFilePath: result.systemURL.path,
-                    notes: capturedNotes
-                )
-                let note = Note(
-                    title: "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))",
-                    createdAt: Date(),
-                    updatedAt: Date(),
-                    meetingAttachment: attachment
-                )
-                NoteStore.shared.save(note)
+            await MainActor.run {
+                self.loadNotes()
+                if !warnings.isEmpty { self.processingError = warnings.joined(separator: " ") }
+                self.isProcessing = false
+                onNoteSaved?(note)
+            }
+        } catch {
+            let attachment = MeetingAttachment(
+                duration: result.duration,
+                audioFilePath: result.systemURL.path,
+                notes: notes
+            )
+            let note = Note(
+                title: "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))",
+                createdAt: Date(),
+                updatedAt: Date(),
+                meetingAttachment: attachment
+            )
+            NoteStore.shared.save(note)
 
-                await MainActor.run {
-                    self.loadNotes()
-                    self.processingError = error.localizedDescription
-                    self.isProcessing = false
-                    self.liveNotes = []
-                    self.liveNoteDraft = ""
-                }
+            await MainActor.run {
+                self.loadNotes()
+                self.processingError = ([error.localizedDescription] + warnings).joined(separator: " ")
+                self.isProcessing = false
             }
         }
     }

@@ -51,6 +51,7 @@ They are placeholders kept in the Xcode project. `Meeting*`-named view files (`M
 | `embeddings.json` | `[noteID: {noteID, digest, vector[Float], updatedAt}]`, `text-embedding-3-small`. Recomputed when the SHA-256 digest of title + body + summary + first 50 segments changes. Pruned on `loadNotes` and removed on delete. |
 | `Recordings/` | WAV files from live recordings ([recording.md](recording.md)) |
 | `ImportedAudio/<noteID>.<ext>` | Copy of an imported audio file; an existing file with the same name is replaced |
+| `Recordings/<recording>_diag.json` | Per-recording diagnostics sidecar next to the WAVs; diagnostics only, not read by the app, not deleted with the note |
 
 `UserDefaults` (`@AppStorage`): `openAIKey`, `braveSearchAPIKey`, `assemblyAIKey` (unused), `appearanceMode`.
 

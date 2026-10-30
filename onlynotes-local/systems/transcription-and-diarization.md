@@ -10,8 +10,8 @@ Entry points, all using the same diarization call (`speakerTagOffset: 2`):
 
 | Entry | Code | Audio used |
 |---|---|---|
-| Stop recording | `AppState.stopAndProcess` (`AppState.swift:92`) | System WAV (diarized) + mic WAV (raw) |
-| Import audio into a note | `AppState.importAudio` (`AppState.swift:174`) | One file, diarized; no mic track |
+| Stop recording | `AppState.stopAndProcess` → `AppState.process` | System WAV (diarized) + mic WAV (raw) |
+| Import audio into a note | `AppState.importAudio` | One file, diarized; no mic track |
 | Chat action `retranscribe` | `MeetingActionExecutor.execute` | `audioFilePath` (system WAV) only; resets `speakers` to `[:]`; regenerates summary and title |
 
 ### Stop-and-process steps

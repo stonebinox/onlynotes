@@ -14,7 +14,7 @@ The first ScreenCaptureKit version (`acbcfb6`) mixed mic and system audio into o
 
 - Write two WAVs: system audio (remote participants) and mic (the local user).
 - Transcribe separately: system → diarized speakers with tags ≥ 2; mic → **Speaker 1**. Tag 1 is reserved for the mic everywhere.
-- Both tracks share one clock: each buffer's presentation timestamp is compared with a host-clock anchor captured before capture starts, and silence is padded so frame N means the same absolute time in both files. Segments are merged by `startTime`.
+- Both tracks share one clock: each buffer's presentation timestamp is compared with a host-clock anchor captured before capture starts, and the drift is measured into the `_diag.json` sidecar. PTS silence padding is implemented but **off by default** (`ptsPaddingEnabled = false`) pending a ~30 s diagnostic recording that shows PTS and the host clock agree (OnlyNotes-awy.1). Segments are merged by `startTime`.
 - The note keeps only the system WAV path for playback and retranscribe.
 
 ## Consequences
@@ -37,7 +37,7 @@ The first ScreenCaptureKit version (`acbcfb6`) mixed mic and system audio into o
 |---|---|
 | One mixed WAV (`acbcfb6`) | Loses source identity; requires inferring the local speaker acoustically/textually |
 | Single track + `gpt-4o` speaker inference (`ba0cd48`, `2kz`) | Text-only inference; replaced once separate tracks existed |
-| Peak-normalizing each stream to level-match them (`acbcfb6`, `0s0`) | Caused gain pumping; replaced by a soft limiter in `0451236` |
+| Peak-normalizing each stream to level-match them (`acbcfb6`, `0s0`) | Caused gain pumping; later replaced by a soft limiter (`0451236`), which `OnlyNotes-awy.1` removed: there is now no limiter or gain change, only a Float32 → Int16 clamp |
 | Independent clocks per track (before `71c3f6a`) | Produced mis-ordered/swapped lines (bd `e3l`) |
 | Post-hoc `consolidateSpeakerTags` merge across tracks | Corrupted attribution; removed from live path in `71c3f6a` |
 

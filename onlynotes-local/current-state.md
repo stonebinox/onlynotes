@@ -1,7 +1,7 @@
 # Current State
 
-**Status:** Current. Diarization (pn6, e3l) and MeetCapture (9zy.1) are **not live-verified**.
-**Last verified:** 2026-10-28
+**Status:** Current. Recorder rewrite (awy.1), diarization (pn6, e3l) and MeetCapture (9zy.1) are **not live-verified**.
+**Last verified:** 2026-10-30
 **Source:** `OnlyNotes/AppState.swift`, `OnlyNotes/Services/*`, `MeetCapture/*`, bd (`pn6`, `e3l`, `9zy.1`, `90d`)
 
 ## Implemented in the macOS app
@@ -10,7 +10,7 @@
 |---|---|---|
 | Menu-bar record/stop, main window, Settings (OpenAI key, Brave key, appearance) | Working | `OnlyNotesApp.swift`, `MenuBarView.swift`, `SettingsView.swift` |
 | Plain notes (title, body, tags) with autosave, Markdown export | Working | `ContentView.swift` (`NoteEditorView`), `Note.swift` |
-| Meeting recording: system audio + mic to two 16 kHz mono WAVs | Working; mic needs macOS 15+; mic is ~15 dB quiet (bd `OnlyNotes-rfn`) | `AudioRecorder.swift` |
+| Meeting recording: system audio + mic to two 16 kHz mono WAVs, `_diag.json` sidecar | **Rewritten, unverified live** (awy.1: cached converter, no limiter, checked writes, session lifecycle); mic needs macOS 15+; mic is ~15 dB quiet (bd `OnlyNotes-rfn`) | `AudioRecorder.swift`, [systems/recording.md](systems/recording.md) |
 | Live timestamped notes during recording | Working | `AppState.addLiveNote`, `LiveNotepadView` |
 | Transcription of system audio with speaker labels (`gpt-4o-transcribe-diarize`) | **Unverified live** (pn6, e3l) | `DiarizedTranscriptionService.swift` |
 | Mic transcription as Speaker 1 (`gpt-4o-mini-transcribe-2025-12-15`) | Implemented; quality limited | `WhisperTranscriptionService.transcribeRaw` |
@@ -29,6 +29,7 @@
 
 | Task | What is unverified |
 |---|---|
+| `OnlyNotes-awy.1` | Recorder rewrite: no clicks, clear mic, duration within ~2 s, measured skew, 30 s PTS diagnostic (padding stays off unless it passes) |
 | `OnlyNotes-pn6` | Coherent per-speaker output on a real 20–40 min recording; diarizer label format matches the parser; timestamp units are seconds |
 | `OnlyNotes-e3l` | Correct speaker count, no text duplicated across speakers, user's lines attributed to user after PTS alignment |
 | `OnlyNotes-9zy.1` | Everything about MeetCapture accuracy (manual evaluation on 5–10 real calls not done) |
