@@ -14,7 +14,8 @@
 | Does PTS-anchored alignment fix swapped/misordered lines, and is the speaker count right (2 people → 2)? | `OnlyNotes-e3l` |
 | Does a single ~60-minute request stay under the ~2000-token output cap noted in pn6? The first implementation limited single calls to ≤ 9 min / < 24 MB; e3l removed the duration limit and kept the size limit. | `OnlyNotes-pn6`, `OnlyNotes-e3l` |
 | How should speaker identity persist across chunks for recordings over the single-call limit (~105 min at 32 kbps)? | e3l follow-up (no task); `known_speaker_references` mentioned in pn6 |
-| How should speaker-mode leakage (remote voices picked up by the mic) be de-bled? | e3l follow-up (no task) |
+| How should speaker-mode leakage (remote voices picked up by the mic) be de-bled? | `OnlyNotes-awy` S3/S4 |
+| Which engine replaces the OpenAI models before the 2027-02-26 shutdown? FluidAudio is first to test; the choice waits for spike evidence. | `OnlyNotes-awy` S3 |
 | Should `known_speaker_references` (up to 4 clips) be used? | pn6 follow-up (no task) |
 | Should per-word timestamps be pursued? | `OnlyNotes-zpv` |
 
@@ -23,7 +24,8 @@
 | Question | Tracking |
 |---|---|
 | Why is the mic captured ~15 dB low, and should gain be corrected at capture or before transcription? | `OnlyNotes-rfn` |
-| Is the crackle caused by per-buffer `AVAudioConverter` creation? | `OnlyNotes-1b2` |
+| Did the cached converter (awy.1) remove the crackle and the mic-length shortfall? Needs a real recording. | `OnlyNotes-awy.1`, `OnlyNotes-1b2` |
+| Do PTS and the host clock agree closely enough to turn PTS padding on? Needs the 30 s diagnostic. | `OnlyNotes-awy.1` |
 | Should playback mix mic + system or play both? | `OnlyNotes-isf` |
 | Should the mic audio path be persisted for retranscribe/playback? | `OnlyNotes-uc3` |
 
@@ -33,8 +35,8 @@
 |---|---|
 | Is Meet's UI active-speaker evidence accurate enough to attribute a transcript? (Go/no-go needs 5–10 real calls incl. screen share, pinned tile, join/leave, overlap, long call.) | `OnlyNotes-9zy.1` |
 | If not, escalate to WebRTC per-track capture and/or local transcription on a Raspberry Pi? | `OnlyNotes-jwq` |
-| Do the DOM selectors in `content.js` match anything in live Meet? | `OnlyNotes-9zy.1` |
-| How would the Mac app ingest audio + timeline (bridge, auth, model changes)? Proposed only. | `OnlyNotes-9zy` |
+| Do the DOM selectors in `content.js` match anything in live Meet? One 7-minute test matched nothing (see [systems/meetcapture.md](systems/meetcapture.md)). Which signals work today? | `OnlyNotes-awy.3` |
+| How would the Mac app ingest the speaker timeline? The `awy` plan excludes a localhost bridge and extension media capture; details are re-planned after `awy.3`. | `OnlyNotes-awy` |
 
 ## AI and context
 

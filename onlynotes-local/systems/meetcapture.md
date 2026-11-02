@@ -8,6 +8,10 @@
 
 Answer one question: is Google Meet's UI active-speaker signal accurate enough to attribute a transcript? The POC only records data for manual comparison. Meet's DOM is undocumented; the UI is **evidence, not ground truth** (it cannot represent overlap, pinning, presentation mode, and has detection delay — bd `9zy`).
 
+## Measured result
+
+Test output `~/Downloads/timeline.json` (2026-09-15, 7-minute call): 0 participants, 81 events, all `no-active-speaker-detected`. DOM detection found nothing in that call. Live discovery of current Meet signals is bd `OnlyNotes-awy.3`.
+
 ## What exists (current)
 
 - Manifest V3, `minimum_chrome_version` 116, version 0.1.0.

@@ -25,6 +25,16 @@
 
 - **MeetCapture** (`MeetCapture/`): MV3 Chrome extension POC that downloads `tab-audio.webm`, optional `mic-audio.webm`, and `timeline.json`. DOM selectors are unverified against live Meet. There is **no** bridge, ingestion, alignment or participant attribution in the Mac app. See [systems/meetcapture.md](systems/meetcapture.md).
 
+## Next up (waiting on the owner)
+
+Epic: bd `OnlyNotes-awy` (plan and owner decisions D1–D9 are in its design field). S1 is committed (`9823ed6`) but stays `in_progress` until these real-recording checks pass. They need only the OnlyNotes Debug build, not the extension:
+
+1. 30 s on headphones, with audio playing and some talking. Passes if `maxDriftFrames` < 1600 and `minDriftFrames` > -1600 on both tracks, and the two tracks' `finalSkewSeconds` differ by < 0.1 s. Otherwise PTS padding stays off.
+2. 20 min on headphones, then 3. 20 min on laptop speakers. Each passes with `finalSkewSeconds` within 2 s on both tracks (confirmed by WAV length), `damageCount` 0, no periodic clicks, and a clear mic with no pumping or clipping.
+4. Stop, then Record immediately. The second recording starts within seconds and the first still produces a note.
+
+Then: run the S2 scorer (`tools/score.py`, numbers only, not shipped in the app) on a new recording (`awy.2`), hold the live Meet DOM discovery call with 2+ people, about 15 min (`awy.3`), and re-plan S3–S5 from that evidence.
+
 ## Not live-verified (bd still in progress)
 
 | Task | What is unverified |
