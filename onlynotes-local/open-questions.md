@@ -12,8 +12,7 @@
 | Does the API's `speaker` label format match `parseDiarizedResponse` (it maps any string in first-seen order)? | `OnlyNotes-pn6` |
 | Are API `start`/`end` values seconds? The parser treats values ≥ 10000 as milliseconds, which would misfire on a > 2.7 h recording in seconds. | `OnlyNotes-pn6` |
 | Does PTS-anchored alignment fix swapped/misordered lines, and is the speaker count right (2 people → 2)? | `OnlyNotes-e3l` |
-| Does a single ~60-minute request stay under the ~2000-token output cap noted in pn6? The first implementation limited single calls to ≤ 9 min / < 24 MB; e3l removed the duration limit and kept the size limit. | `OnlyNotes-pn6`, `OnlyNotes-e3l` |
-| How should speaker identity persist across chunks for recordings over the single-call limit (~105 min at 32 kbps)? | e3l follow-up (no task); `known_speaker_references` mentioned in pn6 |
+| How should speaker identity persist across chunks for recordings that exceed either single-call condition (>= 24 MiB or > 1399 s)? | e3l follow-up (no task); `known_speaker_references` mentioned in pn6 |
 | How should speaker-mode leakage (remote voices picked up by the mic) be de-bled? | `OnlyNotes-awy` S3/S4 |
 | Which engine replaces the OpenAI models before the 2027-02-26 shutdown? FluidAudio is first to test; the choice waits for spike evidence. | `OnlyNotes-awy` S3 |
 | Should `known_speaker_references` (up to 4 clips) be used? | pn6 follow-up (no task) |

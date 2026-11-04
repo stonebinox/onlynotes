@@ -1,6 +1,6 @@
 # DEC-004: Single-call OpenAI diarization
 
-**Status:** Accepted — pending live verification (bd `OnlyNotes-pn6` and `OnlyNotes-e3l` still in progress)
+**Status:** Accepted — pending live verification (bd `OnlyNotes-pn6` and `OnlyNotes-e3l` still in progress). Routing rule (size-only single-call threshold) superseded by [DEC-007](DEC-007-single-call-duration-guard.md)
 **Date:** 2026-09-02 (model swap); 2026-09-04 (single-call, AAC transcode)
 **Deciders:** Anoop Santhanam
 **Last verified:** 2026-10-28
@@ -19,6 +19,8 @@ Real recordings gave incoherent transcripts. Root cause (bd `pn6`, confirmed by 
 - Apply the same service to recording, import and retranscribe.
 
 ## Consequences
+
+> **Superseded in part:** the size-only routing in the Decision section and the `> ~105 min` chunking thresholds below are historical. DEC-007 adds a 1399 s duration limit, so recordings over about 23 minutes now chunk, and measurement answered the ~2000 output-token question (it does not apply). See [DEC-007](DEC-007-single-call-duration-guard.md).
 
 **Positive:**
 - Removes the character-slicing merge and the AssemblyAI dependency.

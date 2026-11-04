@@ -48,7 +48,7 @@ Both pn6 and e3l passed Codex review with zero blocking findings and build; neit
 
 ## Removed / not live
 
-Google Cloud STT/GCS, AssemblyAI, Brave Answers, character-proportional text slicing, and the GPT-4o speaker-consolidation pass are not part of the live pipeline. See [decisions/DEC-002](decisions/DEC-002-local-storage-cloud-processing.md) and [DEC-004](decisions/DEC-004-single-call-diarization.md). Dead code that remains in the tree is listed in [systems/transcription-and-diarization.md](systems/transcription-and-diarization.md#dead-code-still-in-the-tree).
+Google Cloud STT/GCS, AssemblyAI, Brave Answers, character-proportional text slicing, and the GPT-4o speaker-consolidation pass are not part of the live pipeline. See [decisions/DEC-002](decisions/DEC-002-local-storage-cloud-processing.md) [DEC-004](decisions/DEC-004-single-call-diarization.md) and [DEC-007](decisions/DEC-007-single-call-duration-guard.md). Dead code that remains in the tree is listed in [systems/transcription-and-diarization.md](systems/transcription-and-diarization.md#dead-code-still-in-the-tree).
 
 ## Build and tests
 

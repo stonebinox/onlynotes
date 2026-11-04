@@ -15,7 +15,7 @@ AudioRecorder (SCStream, display-wide system audio + mic on macOS 15+)
    └── recording_<ts>_mic.wav    mic, 16 kHz mono Int16 (no silence padding by default; PTS padding is off, see systems/recording.md)
    ▼  AppState.stopAndProcess
    ├── system WAV → DiarizedTranscriptionService  → segments, tags 2…
-   │      (AAC 32 kbps transcode → one gpt-4o-transcribe-diarize call if < 24 MB, else silence-split chunks)
+   │      (AAC 32 kbps transcode → one gpt-4o-transcribe-diarize call if file < 24 MiB AND duration <= 1399 s, else silence-split chunks)
    ├── mic WAV (if > 4096 bytes) → WhisperTranscriptionService.transcribeRaw → segments, tag 1
    ▼
  merge sorted by startTime ──► OpenAIService.summarize (gpt-4o) ──► title, summary, action items

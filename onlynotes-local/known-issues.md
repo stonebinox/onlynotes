@@ -30,7 +30,7 @@ One line each: symptom → impact. Details live in the bd task.
 | OnlyNotes-awy | OpenAI notice of 2026-08-26: `gpt-4o-transcribe-diarize` and `gpt-4o-mini-transcribe` shut down 2027-02-26 → current transcription stops working then unless the engine is replaced (S3). Re-check the date before relying on it |
 | No task | Mic track uses `gpt-4o-mini-transcribe`, which returns text without segment timestamps (pn6, 66z); each mic chunk becomes one segment → Speaker 1 is a coarse block placed at chunk start in the merged transcript |
 | OnlyNotes-whz | `transcribeRaw` does not run `dedupeOverlap`; mic chunks overlap by 20 s on recordings > 12 min 20 s → possible repeated text |
-| OnlyNotes-nq8 | Chunked diarization (> 24 MB AAC) silently skips failed chunks (log only) → transcript with gaps and no marker |
+| OnlyNotes-nq8 | Chunked diarization (>= 24 MiB AAC or > 1399 s) silently skips failed chunks (log only) → transcript with gaps and no marker |
 | No task | Chunked diarization gives each chunk its own speaker tag range (stride 50) → same person gets different tags per chunk |
 | OnlyNotes-87j | `dedupeOverlap` removes duplicate text globally → short acknowledgements ("yeah") dropped (only affects the Whisper-service helpers; mic path does not call it today) |
 | OnlyNotes-uc3 | Mic path not stored; retranscribe uses system audio only → mic transcript and Speaker 1 lines lost on retranscribe |

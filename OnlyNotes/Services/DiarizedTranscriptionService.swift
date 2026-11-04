@@ -8,8 +8,10 @@ class DiarizedTranscriptionService {
 
     // MARK: - Constants
 
-    /// Files smaller than this go in one request; larger use the silence-split chunked path.
-    private static let singleCallMaxFileSize: Int = 24 * 1024 * 1024  // 24 MB
+    /// Files smaller than this go in one request; files at or above it use the silence-split chunked path.
+    private static let singleCallMaxFileSize: Int = 24 * 1024 * 1024  // 24 MiB
+    /// The API rejects audio over 1400 seconds; 1399 s is a rounded-up safety margin over the observed 44 ms local/API duration difference.
+    private static let singleCallMaxDuration: TimeInterval = 1399
     /// Target chunk length when splitting is necessary (~5.75 min keeps well under limits).
     private static let chunkTargetDuration: TimeInterval = 345
     /// Search ±this many seconds around the target cut point for a silence trough.
@@ -32,15 +34,15 @@ class DiarizedTranscriptionService {
     // MARK: - Public
 
     /// Transcribe `audioURL` and return segments with speaker tags starting at `speakerTagOffset`.
-    /// Transcodes to compact AAC first so essentially any recording under ~1 hour fits in one API
-    /// call with a consistent speaker namespace. Falls back to silence-split chunking only when the
-    /// transcoded file exceeds the 24 MB limit.
+    /// Transcodes to compact AAC first. A recording goes in one API call (one consistent speaker
+    /// namespace) only when the transcoded file is under 24 MiB AND the original duration is at most
+    /// 1399 s; otherwise it uses silence-split chunking.
     func transcribe(audioURL: URL, speakerTagOffset: Int) async throws -> [TranscriptSegment] {
         let asset = AVURLAsset(url: audioURL)
         let duration = try await asset.load(.duration)
         guard CMTimeGetSeconds(duration) > 0 else { throw DiarizedError.invalidAudio }
 
-        // Transcode to compact mono AAC at 32 kbps — ~0.24 MB/min, so 60 min ≈ 14 MB, 90 min ≈ 21 MB, ~105 min before the 24 MB limit.
+        // Transcode to compact mono AAC at 32 kbps (~0.24 MB/min), which keeps typical calls well under the size limit.
         var workURL: URL = audioURL
         var didTranscode = false
         do {
@@ -55,13 +57,14 @@ class DiarizedTranscriptionService {
 
         let workSize = (try? FileManager.default.attributesOfItem(atPath: workURL.path))?[.size] as? Int ?? 0
 
-        if workSize < Self.singleCallMaxFileSize {
-            print("DiarizedTranscriptionService: single call (size=\(workSize / 1024)KB)")
+        let durationSeconds = CMTimeGetSeconds(duration)
+        if workSize < Self.singleCallMaxFileSize && durationSeconds <= Self.singleCallMaxDuration {
+            print("DiarizedTranscriptionService: single call (size=\(workSize / 1024)KB, duration=\(Int(durationSeconds))s)")
             let segments = try await transcribeChunk(url: workURL, startOffset: 0, speakerTagBase: speakerTagOffset)
             return segments.sorted { $0.startTime < $1.startTime }
         }
 
-        print("DiarizedTranscriptionService: chunked path (size=\(workSize / 1024)KB)")
+        print("DiarizedTranscriptionService: chunked path (size=\(workSize / 1024)KB, duration=\(Int(durationSeconds))s)")
 
         let workAsset = AVURLAsset(url: workURL)
         let workDuration = CMTimeGetSeconds(try await workAsset.load(.duration))

@@ -36,7 +36,7 @@ The goal is local-first *storage*: notes, audio and embeddings live on the user'
 | 2 (2026-05-02) | `whisper-1` (`verbose_json`), 12-min chunks with 20 s overlap, then `gpt-4o` to assign speaker IDs | Superseded by separate tracks ([DEC-003](DEC-003-separate-mic-system-tracks.md)); the `gpt-4o` pass guessed speakers from text alone |
 | 3 (2026-06-01) | `gpt-4o-mini-transcribe` for multilingual text (`bfe`) | Still used for the mic track; returns no segment timestamps |
 | 4 (2026-06-01…06-17) | AssemblyAI diarization on system audio (`c62`), then hybrid AssemblyAI speaker turns + OpenAI text (`45v`), `gpt-4o` inference (`2kz`), character-proportional slicing (`66z`), speaker consolidation (`st3`) | Rejected: AssemblyAI text quality/multilingual weakness; slicing text by character proportion produced garbled, misattributed output (`pn6`) |
-| 5 (2026-09-02) | OpenAI `gpt-4o-transcribe-diarize` (`pn6`) | Current; see [DEC-004](DEC-004-single-call-diarization.md) |
+| 5 (2026-09-02) | OpenAI `gpt-4o-transcribe-diarize` (`pn6`) | Current; see [DEC-004](DEC-004-single-call-diarization.md) and [DEC-007](DEC-007-single-call-duration-guard.md) |
 | Proposed, not adopted | Local Whisper on a Raspberry Pi to keep audio at home (`OnlyNotes-jwq`, open) | Would change this decision; would need a new ADR |
 
 ## References

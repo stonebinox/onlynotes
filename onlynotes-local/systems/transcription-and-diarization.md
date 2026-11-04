@@ -32,9 +32,9 @@ Speaker tag convention: **1 = mic (the local user)**, **≥ 2 = system-audio spe
 | Endpoint | `POST https://api.openai.com/v1/audio/transcriptions` (multipart) |
 | Fields | `response_format=diarized_json`, `chunking_strategy=auto`, `file` |
 | Timeout | 300 s |
-| Pre-processing | Transcode to mono AAC/M4A, 16 kHz, 32 kbps (`AVAssetWriter`). ~0.24 MB/min → 60 min ≈ 14 MB; ~105 min reaches the limit. On transcode failure the original file is sent. |
-| Single-call threshold | `singleCallMaxFileSize` = 24 × 1024 × 1024 bytes of the (transcoded) file |
-| Chunked fallback | Used only above the threshold: target 345 s per chunk, search ±60 s for silence, minimum chunk 60 s |
+| Pre-processing | Transcode to mono AAC/M4A, 16 kHz, 32 kbps (`AVAssetWriter`). ~0.24 MB/min. On transcode failure the original file is sent. |
+| Single-call condition | Both: transcoded size < `singleCallMaxFileSize` (24 × 1024 × 1024 bytes) AND original loaded duration <= `singleCallMaxDuration` (1399 s; the API rejects audio over 1400 s). See [DEC-007](../decisions/DEC-007-single-call-duration-guard.md) |
+| Chunked fallback | Used when either condition fails: target 345 s per chunk, search ±60 s for silence, minimum chunk 60 s |
 | Silence detection | 30 ms RMS windows; silent if energy ≤ 0.20 × median; a run needs ≥ 200 ms; cut at the run centre nearest the target; hard cut at the target if none; uniform cuts if detection throws |
 | Chunk export | `AVAssetExportPresetAppleM4A`, unique temp dir per job |
 | Speaker tags | Labels mapped to ints in first-seen order starting at `speakerTagBase`; chunk *i* uses `speakerTagOffset + i × 50` (`speakerNamespaceStride`) |
@@ -42,7 +42,7 @@ Speaker tag convention: **1 = mic (the local user)**, **≥ 2 = system-audio spe
 | Dropped segments | Empty text or missing `speaker` are dropped and counted in the log |
 | Failures | Single call: error propagates. Chunked: a failed chunk is logged and **skipped**; error only if all chunks fail |
 
-Single-call is the intended normal case: one call → one consistent speaker namespace.
+Single-call is the intended case for recordings within both limits: one call → one consistent speaker namespace. Recordings over 1399 s are chunked even though their AAC is far below 24 MiB.
 
 ## Mic transcription (`WhisperTranscriptionService.transcribeRaw`)
 
@@ -60,13 +60,13 @@ Despite the class name, the live model is **`gpt-4o-mini-transcribe-2025-12-15`*
 | `OpenAIService.consolidateSpeakerTags` | Removed from the live path in `71c3f6a` (corrupted attribution); function remains |
 | `AppState.assemblyAIKey` | Declared, no UI, no use |
 
-Do not wire these back in without superseding [DEC-004](../decisions/DEC-004-single-call-diarization.md).
+Do not wire these back in without superseding [DEC-004](../decisions/DEC-004-single-call-diarization.md) (itself partly superseded by [DEC-007](../decisions/DEC-007-single-call-duration-guard.md)).
 
 ## What is not verified
 
 - Output quality and speaker count on real calls (pn6, e3l).
 - That the diarizer's `speaker` labels are strings handled by the parser, and that timestamps are seconds (pn6).
-- That a single request for a long recording is not truncated by the output-token cap noted in pn6 (see [../open-questions.md](../open-questions.md)).
+- The ~2000 output-token concern from pn6 was answered by measurement for this request shape (734.8 s → 23,011 tokens; 1350 s → 42,308 tokens, last segment end 1350.9 s, max gap 0.7 s; synthetic audio, 2026-11-03). Real-call coverage of the chunked path is still to be checked (bd `OnlyNotes-aig`).
 - That mic/system PTS alignment is correct (e3l; see [recording.md](recording.md)).
 
 ## History (why the code looks like this)
@@ -82,8 +82,9 @@ Do not wire these back in without superseding [DEC-004](../decisions/DEC-004-sin
 | 2026-06-17 | `d47aba3` (`66z`), `14cd444` (`st3`) | Because OpenAI returned one blob per chunk, text was sliced across AssemblyAI turns by character proportion; `consolidateSpeakerTags` added because AssemblyAI over-fragmented speakers |
 | 2026-09-02 | `6810e66` (`pn6`) | Hybrid and `mergeSpeakerLabels` deleted; `gpt-4o-transcribe-diarize` introduced (single call ≤ 9 min / 24 MB, else silence-split with consolidation) |
 | 2026-09-04 | `71c3f6a` (`e3l`) | PTS single-clock alignment; AAC transcode so most calls are one request; `consolidateSpeakerTags` removed from live path |
+| 2026-11-03 | bd `OnlyNotes-aig` | A 1457 s recording took the single-call path (size only) and saved an empty fallback note; API rejects audio over 1400 s. Duration guard (<= 1399 s) restored: [DEC-007](../decisions/DEC-007-single-call-duration-guard.md) |
 
-Rationale for each step is in [DEC-002](../decisions/DEC-002-local-storage-cloud-processing.md), [DEC-003](../decisions/DEC-003-separate-mic-system-tracks.md) and [DEC-004](../decisions/DEC-004-single-call-diarization.md).
+Rationale for each step is in [DEC-002](../decisions/DEC-002-local-storage-cloud-processing.md), [DEC-003](../decisions/DEC-003-separate-mic-system-tracks.md), [DEC-004](../decisions/DEC-004-single-call-diarization.md) and [DEC-007](../decisions/DEC-007-single-call-duration-guard.md).
 
 ### Why AssemblyAI was dropped (do not revive without new evidence)
 
