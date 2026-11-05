@@ -15,3 +15,4 @@ ADRs record why something is the way it is and what was rejected. Check here bef
 | [DEC-005](DEC-005-brave-retrieval-openai-synthesis.md) | Brave retrieval + OpenAI synthesis for web context | Accepted |
 | [DEC-006](DEC-006-meetcapture-measurement-first-poc.md) | MeetCapture as a measurement-first POC | Accepted — pending live verification |
 | [DEC-007](DEC-007-single-call-duration-guard.md) | Single-call diarization also requires duration <= 1399 s | Accepted — pending live verification |
+| [DEC-008](DEC-008-no-partial-transcripts.md) | Retry, then fail visibly: no partial transcripts per track | Accepted — pending live verification |

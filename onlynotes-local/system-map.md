@@ -17,6 +17,7 @@ AudioRecorder (SCStream, display-wide system audio + mic on macOS 15+)
    ├── system WAV → DiarizedTranscriptionService  → segments, tags 2…
    │      (AAC 32 kbps transcode → one gpt-4o-transcribe-diarize call if file < 24 MiB AND duration <= 1399 s, else silence-split chunks)
    ├── mic WAV (if > 4096 bytes) → WhisperTranscriptionService.transcribeRaw → segments, tag 1
+   │      (mic failure after retries is non-fatal: system segments + a tag-0 warning marker are kept)
    ▼
  merge sorted by startTime ──► OpenAIService.summarize (gpt-4o) ──► title, summary, action items
    ▼
@@ -28,7 +29,7 @@ AudioRecorder (SCStream, display-wide system audio + mic on macOS 15+)
 Downstream of storage:
 
 - Detail view: playback of `audioFilePath` (system WAV only), speaker rename, export, tags.
-- Chat: `chatWithMeetingControl` → optional action → `MeetingActionExecutor` → mutated note saved.
+- Chat: `chatWithMeetingControl` → optional action → `MeetingActionExecutor` → mutated note saved. Retranscribe runs both tracks: the system WAV (`audioFilePath`) and the mic WAV derived as `<system path minus extension>_mic.wav` when it exists and is > 4096 bytes. A mic failure keeps the system transcript and adds a tag-0 "⚠️" marker ([DEC-008](decisions/DEC-008-no-partial-transcripts.md)).
 - Note editor context panel: tags + embeddings + Brave search → OpenAI synthesis.
 - Import: `AppState.importAudio` copies the file to `ImportedAudio/`, runs diarization + summary, updates the existing note.
 

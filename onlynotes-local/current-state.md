@@ -13,7 +13,7 @@
 | Meeting recording: system audio + mic to two 16 kHz mono WAVs, `_diag.json` sidecar | **Rewritten, unverified live** (awy.1: cached converter, no limiter, checked writes, session lifecycle); mic needs macOS 15+; mic is ~15 dB quiet (bd `OnlyNotes-rfn`) | `AudioRecorder.swift`, [systems/recording.md](systems/recording.md) |
 | Live timestamped notes during recording | Working | `AppState.addLiveNote`, `LiveNotepadView` |
 | Transcription of system audio with speaker labels (`gpt-4o-transcribe-diarize`) | **Unverified live** (pn6, e3l) | `DiarizedTranscriptionService.swift` |
-| Mic transcription as Speaker 1 (`gpt-4o-mini-transcribe-2025-12-15`) | Implemented; quality limited | `WhisperTranscriptionService.transcribeRaw` |
+| Mic transcription as Speaker 1 (`gpt-4o-mini-transcribe-2025-12-15`) | Implemented; quality limited. nq8: shared 5-attempt request retry, no partial system/mic tracks, visible tag-0 marker on mic failure, retranscribe also transcribes the derived `_mic.wav`, mic WAV no longer deleted for short recordings: **implemented, pending Phase 5** | `WhisperTranscriptionService.transcribeRaw` |
 | Summary, title, action items (`gpt-4o`) | Implemented | `OpenAIService.summarize` |
 | Audio import into a note (same diarization path) | Implemented | `AppState.importAudio` |
 | Speaker rename, tags, regenerate summary, Markdown export, audio export, playback | Implemented; playback is system track only (bd `OnlyNotes-isf`) | `MeetingDetailView.swift` |

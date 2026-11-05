@@ -20,11 +20,13 @@
 | System audio | `~/Library/Application Support/OnlyNotes/Recordings/recording_<yyyy-MM-dd_HH-mm-ss>.wav` |
 | Mic audio | same name with `_mic.wav` suffix |
 
-Both: 16 kHz, mono, 16-bit PCM WAV (`RecordingSession.wavSettings`). The note stores only the system path (`MeetingAttachment.audioFilePath`). The mic path is **not persisted** (bd `OnlyNotes-uc3`).
+Both: 16 kHz, mono, 16-bit PCM WAV (`RecordingSession.wavSettings`). The note stores only the system path (`MeetingAttachment.audioFilePath`). The mic path is **not persisted**; retranscribe derives it as `<system path minus extension>_mic.wav` ([meeting-chat-actions.md](meeting-chat-actions.md)).
 
 If `startCapture()` fails with `SCStreamError.Code.failedToStartMicrophoneCapture` (macOS 15+, -3820), `startStream()` records mic-track damage and retries once with a stream built without the microphone (`makeStream(includeMic: false)`), so system audio is still recorded.
 
 On macOS 14 the mic file is created but never written beyond the header; `AppState.process` skips mic files ≤ 4096 bytes.
+
+Mic transcription failure (after the shared retries) is non-fatal: the system transcript and both audio files remain, the transcript gets a tag-0 marker, and the warning is combined with existing warnings in `processingError`. The mic WAV is no longer deleted by `transcribeRaw` cleanup for recordings ≤ 740 s (bd `mi5`). Pending Phase 5.
 
 ## Per-buffer processing (`writeSampleBuffer`) — rewritten by OnlyNotes-awy.1 (UNVERIFIED on a real recording)
 
@@ -48,7 +50,7 @@ On macOS 14 the mic file is created but never written beyond the header; `AppSta
 - `RecordingDiagnostics.recordingStartEpochMs`: Unix wall-clock ms at `startCapture()` completion; separate from host-clock/PTS values. Not duplicated on `RecordingResult`.
 - `hostClockAtCaptureStartSeconds` (in `RecordingDiagnostics`): host-clock seconds when `startCapture()` completed. Measurement only: a 30 s diagnostic recording compares each track's `firstPTSSeconds` against it and against `hostClockAnchorSeconds` (pre-start). No validator; padding is not auto-enabled.
 - `RecordingDiagnostics` (per track: first PTS, host-clock anchor, expected frames from PTS span, written frames, decoded duration, padding frames, would-pad frames, max drift, `finalSkewSeconds` (decoded duration minus capture duration; measurement only, no correction), damage count + first error) is returned in `RecordingResult` and written to `<system file name>_diag.json` next to the system WAV; one summary line is printed at stop.
-- `RecordingResult.warningText` builds the warning: damage ("Recording had N audio write/convert errors; transcript may have gaps.") and/or mic missing (0 mic frames: "Microphone recorded no audio; your own speech is not in this transcript."), one combined string. `AppState.process` sets it as `processingError` on the success path, and on the failure path appends it to the API error. Nothing is persisted on `Note`/`MeetingAttachment` (later task). UNVERIFIED: on macOS 14 the mic stream is not added, so this warning would fire on every recording there.
+- `RecordingResult.warningText` builds the warning: damage ("Recording had N audio write/convert errors; transcript may have gaps.") and/or mic missing (0 mic frames: "Microphone recorded no audio; your own speech is not in this transcript."), one combined string. `AppState.process` sets it as `processingError` on the success path (joined with the mic-transcription failure warning, if any), and on the failure path appends it to the API error. Nothing is persisted on `Note`/`MeetingAttachment` (later task). UNVERIFIED: on macOS 14 the mic stream is not added, so this warning would fire on every recording there.
 
 ## Failure behaviour
 

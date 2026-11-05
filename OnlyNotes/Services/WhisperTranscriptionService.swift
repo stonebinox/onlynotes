@@ -23,40 +23,36 @@ class WhisperTranscriptionService {
     }
 
     /// Transcribe without speaker inference — caller is responsible for tagging speakers.
+    /// All-or-nothing: throws if any chunk fails after retries; never returns a partial track.
     func transcribeRaw(audioURL: URL) async throws -> [TranscriptSegment] {
         let chunks = try splitAudio(url: audioURL)
-        var allSegments: [TranscriptSegment] = []
-        var partialWarning: String? = nil
-
-        for (index, chunk) in chunks.enumerated() {
-            do {
-                let raw = try await transcribeChunk(url: chunk.url, offset: chunk.startTime)
-                allSegments.append(contentsOf: raw)
-            } catch {
-                partialWarning = "Chunk \(index + 1)/\(chunks.count) failed: \(error.localizedDescription). Saving partial transcript."
-                print("WhisperTranscriptionService: \(partialWarning!)")
-                break  // save what we have
+        defer {
+            for chunk in chunks where chunk.url != audioURL {
+                try? FileManager.default.removeItem(at: chunk.url)
             }
         }
 
-        // Clean up temp chunk files
-        for chunk in chunks {
-            try? FileManager.default.removeItem(at: chunk.url)
+        var allSegments: [TranscriptSegment] = []
+        for (index, chunk) in chunks.enumerated() {
+            let raw = try await transcribeChunk(url: chunk.url, offset: chunk.startTime, label: "mic chunk \(index + 1)/\(chunks.count)")
+            allSegments.append(contentsOf: raw)
         }
-
-        let merged = allSegments
-
-        if let warning = partialWarning {
-            let marker = TranscriptSegment(
-                speakerTag: 0,
-                text: "⚠️ \(warning)",
-                startTime: (merged.last?.endTime ?? 0) + 1,
-                endTime: (merged.last?.endTime ?? 0) + 1
-            )
-            return merged + [marker]
+        guard !allSegments.isEmpty else {
+            throw WhisperError.transcriptionFailed("No transcript segments returned for any mic chunk")
         }
+        return allSegments
+    }
 
-        return merged
+    /// Tag-0 marker shown in the transcript when the mic track could not be transcribed.
+    /// Placed one second after the last of `segments` so it sorts to the end.
+    static func micFailureMarker(error: Error, after segments: [TranscriptSegment]) -> TranscriptSegment {
+        let end = (segments.map(\.endTime).max() ?? 0) + 1
+        return TranscriptSegment(
+            speakerTag: 0,
+            text: "⚠️ Your microphone could not be transcribed (\(error.localizedDescription)). Your side of the conversation is missing. The audio is kept: use Retranscribe this meeting to try again.",
+            startTime: end,
+            endTime: end
+        )
     }
 
     func transcribe(systemURL: URL, micURL: URL?) async throws -> [TranscriptSegment] {
@@ -144,6 +140,7 @@ class WhisperTranscriptionService {
         var chunks: [AudioChunk] = []
         var chunkStart: TimeInterval = 0
         let tempDir = FileManager.default.temporaryDirectory
+        let jobID = UUID().uuidString  // unique per job so concurrent jobs never share chunk files
 
         while chunkStart < duration {
             let chunkEnd = min(chunkStart + chunkDuration + overlapDuration, duration)
@@ -151,9 +148,16 @@ class WhisperTranscriptionService {
             let endCM = CMTime(seconds: chunkEnd, preferredTimescale: 44100)
             let timeRange = CMTimeRange(start: startCM, end: endCM)
 
-            let chunkURL = tempDir.appendingPathComponent("chunk_\(Int(chunkStart)).m4a")
+            let chunkURL = tempDir.appendingPathComponent("chunk_\(jobID)_\(Int(chunkStart)).m4a")
 
-            try exportChunk(asset: asset, timeRange: timeRange, to: chunkURL)
+            do {
+                try exportChunk(asset: asset, timeRange: timeRange, to: chunkURL)
+            } catch {
+                // Clean up everything exported so far (and any partial output) before rethrowing.
+                try? FileManager.default.removeItem(at: chunkURL)
+                for chunk in chunks { try? FileManager.default.removeItem(at: chunk.url) }
+                throw error
+            }
             chunks.append(AudioChunk(url: chunkURL, startTime: chunkStart))
 
             chunkStart += chunkDuration
@@ -191,7 +195,7 @@ class WhisperTranscriptionService {
 
     // MARK: - Whisper Transcription
 
-    private func transcribeChunk(url: URL, offset: TimeInterval) async throws -> [TranscriptSegment] {
+    private func transcribeChunk(url: URL, offset: TimeInterval, label: String = "whisper chunk") async throws -> [TranscriptSegment] {
         let audioData = try Data(contentsOf: url)
         guard !audioData.isEmpty else { return [] }
 
@@ -241,16 +245,7 @@ class WhisperTranscriptionService {
 
         request.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let requestID = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "x-request-id") ?? "unknown"
-
-        guard let http = response as? HTTPURLResponse else {
-            throw WhisperError.transcriptionFailed("No HTTP response")
-        }
-        guard http.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? "unknown"
-            throw WhisperError.transcriptionFailed("HTTP \(http.statusCode) (request-id: \(requestID)): \(msg)")
-        }
+        let (data, _) = try await performTranscriptionRequest(request, label: label) { WhisperError.transcriptionFailed($0) }
 
         return try parseWhisperResponse(data: data, offset: offset)
     }
@@ -284,11 +279,12 @@ class WhisperTranscriptionService {
                     endTime: end
                 )
             }
-        } else if let text = json["text"] as? String,
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        } else if let text = json["text"] as? String {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return [] }
             return [TranscriptSegment(
                 speakerTag: 1,
-                text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                text: trimmed,
                 startTime: offset,
                 endTime: offset + 0.01
             )]

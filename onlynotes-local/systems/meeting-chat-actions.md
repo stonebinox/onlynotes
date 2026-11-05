@@ -17,7 +17,7 @@ One action per response (no chaining; bd `OnlyNotes-udn`). There is no user conf
 
 | Type | Effect | Notes |
 |---|---|---|
-| `retranscribe` | Re-diarizes `audioFilePath` (system WAV), clears `speakers`, regenerates title/summary/action items | Needs the audio file; mic track is not re-transcribed (bd `uc3`) |
+| `retranscribe` | Re-diarizes `audioFilePath` (system WAV), then transcribes the derived mic sibling `<system path minus extension>_mic.wav` if it exists and is > 4096 bytes (tag 1, merged and sorted like live processing); clears `speakers`, regenerates title/summary/action items | Needs the system audio file. Missing/tiny mic file (e.g. imported audio) → system-only, no marker. Mic failure is non-fatal: system segments plus the tag-0 warning marker are saved. System or summary failure throws and the stored transcript is kept. Pending Phase 5 (bd `uc3`, `nq8`) |
 | `regenerate_summary` | Re-summarizes with current speaker names; optional `context` is added as a live note at offset 0 | Updates title, summary, action items |
 | `rename_speaker` | Sets `speakers["<tag>"]` | Requires `speakerTag` and non-empty `newName` |
 | `add_tag` / `remove_tag` | Updates tags via `Note.setTags` | `remove_tag` lowercases/trims before comparing |

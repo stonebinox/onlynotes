@@ -60,7 +60,7 @@ class DiarizedTranscriptionService {
         let durationSeconds = CMTimeGetSeconds(duration)
         if workSize < Self.singleCallMaxFileSize && durationSeconds <= Self.singleCallMaxDuration {
             print("DiarizedTranscriptionService: single call (size=\(workSize / 1024)KB, duration=\(Int(durationSeconds))s)")
-            let segments = try await transcribeChunk(url: workURL, startOffset: 0, speakerTagBase: speakerTagOffset)
+            let segments = try await transcribeChunk(url: workURL, startOffset: 0, speakerTagBase: speakerTagOffset, label: "chunk 1/1")
             return segments.sorted { $0.startTime < $1.startTime }
         }
 
@@ -92,11 +92,18 @@ class DiarizedTranscriptionService {
             do {
                 try exportChunk(asset: workAsset, timeRange: range, to: chunkURL)
                 let speakerBase = speakerTagOffset + chunkIndex * Self.speakerNamespaceStride
-                let segments = try await transcribeChunk(url: chunkURL, startOffset: cut.start, speakerTagBase: speakerBase)
+                let segments = try await transcribeChunk(
+                    url: chunkURL, startOffset: cut.start, speakerTagBase: speakerBase,
+                    label: "chunk \(chunkIndex + 1)/\(cuts.count)"
+                )
                 allSegments.append(contentsOf: segments)
                 print("DiarizedTranscriptionService: chunk \(chunkIndex + 1)/\(cuts.count) ok, \(segments.count) segments")
             } catch {
-                print("DiarizedTranscriptionService: chunk \(chunkIndex + 1)/\(cuts.count) failed: \(error.localizedDescription)")
+                // All-or-nothing: a track with a missing chunk is never returned.
+                func mmss(_ t: TimeInterval) -> String { String(format: "%02d:%02d", Int(t) / 60, Int(t) % 60) }
+                throw DiarizedError.transcriptionFailed(
+                    "chunk \(chunkIndex + 1)/\(cuts.count) (\(mmss(cut.start))–\(mmss(cut.end))): \(error.localizedDescription)"
+                )
             }
         }
 
@@ -171,7 +178,7 @@ class DiarizedTranscriptionService {
 
     // MARK: - API Call
 
-    private func transcribeChunk(url: URL, startOffset: TimeInterval, speakerTagBase: Int) async throws -> [TranscriptSegment] {
+    private func transcribeChunk(url: URL, startOffset: TimeInterval, speakerTagBase: Int, label: String) async throws -> [TranscriptSegment] {
         let audioData = try Data(contentsOf: url)
         guard !audioData.isEmpty else { return [] }
 
@@ -223,16 +230,7 @@ class DiarizedTranscriptionService {
 
         request.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let requestID = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "x-request-id") ?? "unknown"
-
-        guard let http = response as? HTTPURLResponse else {
-            throw DiarizedError.transcriptionFailed("No HTTP response")
-        }
-        guard http.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? "unknown"
-            throw DiarizedError.transcriptionFailed("HTTP \(http.statusCode) (request-id: \(requestID)): \(msg)")
-        }
+        let (data, _) = try await performTranscriptionRequest(request, label: label) { DiarizedError.transcriptionFailed($0) }
 
         return try parseDiarizedResponse(data: data, startOffset: startOffset, speakerTagBase: speakerTagBase)
     }
@@ -473,6 +471,67 @@ class DiarizedTranscriptionService {
         if let err = exportSession.error { throw err }
         guard exportSession.status == .completed else { throw DiarizedError.exportFailed }
     }
+}
+
+// MARK: - Shared Request Retry
+
+/// Executes a transcription request with up to 5 attempts (sleeping 5, 15, 30, 60 s between them).
+/// Returns the body of the first HTTP 200. Retries only transient URLError codes and HTTP 408/429/5xx;
+/// cancellation and every other failure throws immediately. Parsing stays with the caller.
+/// Worst case is about 5 × 300 s request timeout + 110 s of sleeps per call.
+func performTranscriptionRequest(_ request: URLRequest, label: String, makeError: (String) -> Error) async throws -> (Data, HTTPURLResponse) {
+    let maxAttempts = 5
+    let delays: [UInt64] = [5, 15, 30, 60]
+    let retryableURLErrorCodes = Set([
+        URLError.timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost,
+        .cannotFindHost, .dnsLookupFailed, .secureConnectionFailed
+    ].map(\.rawValue))
+
+    var lastFailure = ""
+    for attempt in 1...maxAttempts {
+        let started = Date()
+        func logFailure(_ detail: String) {
+            let elapsed = Int(Date().timeIntervalSince(started).rounded())
+            print("\(label) attempt \(attempt)/\(maxAttempts) failed after \(elapsed)s: \(detail)")
+        }
+        var shortDetail = ""
+        var result: (Data, URLResponse)? = nil
+        do {
+            result = try await URLSession.shared.data(for: request)
+        } catch {
+            let ns = error as NSError
+            guard ns.domain == NSURLErrorDomain, retryableURLErrorCodes.contains(ns.code) else {
+                logFailure(ns.domain == NSURLErrorDomain ? "URLError \(ns.code) (not retried)" : "\(type(of: error)) (not retried)")
+                throw error
+            }
+            shortDetail = "URLError \(ns.code)"
+            lastFailure = "URLError \(ns.code) (\(ns.localizedDescription))"
+        }
+
+        if let (data, response) = result {
+            guard let http = response as? HTTPURLResponse else {
+                logFailure("non-HTTP response (not retried)")
+                throw makeError("No HTTP response")
+            }
+            if http.statusCode == 200 { return (data, http) }
+            let status = http.statusCode
+            let requestID = http.value(forHTTPHeaderField: "x-request-id") ?? "unknown"
+            let body = String(data: data, encoding: .utf8) ?? "unknown"
+            let failure = "HTTP \(status) (request-id: \(requestID)): \(body)"
+            guard status == 408 || status == 429 || (500...599).contains(status) else {
+                logFailure("HTTP \(status) (not retried)")
+                throw makeError(failure)
+            }
+            shortDetail = "HTTP \(status)"
+            lastFailure = failure
+        }
+
+        logFailure(shortDetail)
+        if attempt < maxAttempts {
+            try await Task.sleep(nanoseconds: delays[attempt - 1] * 1_000_000_000)
+        }
+    }
+    throw makeError("\(label) failed after \(maxAttempts) attempts; last error: \(lastFailure)")
 }
 
 // MARK: - Errors

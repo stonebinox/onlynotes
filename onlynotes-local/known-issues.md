@@ -30,11 +30,11 @@ One line each: symptom → impact. Details live in the bd task.
 | OnlyNotes-awy | OpenAI notice of 2026-08-26: `gpt-4o-transcribe-diarize` and `gpt-4o-mini-transcribe` shut down 2027-02-26 → current transcription stops working then unless the engine is replaced (S3). Re-check the date before relying on it |
 | No task | Mic track uses `gpt-4o-mini-transcribe`, which returns text without segment timestamps (pn6, 66z); each mic chunk becomes one segment → Speaker 1 is a coarse block placed at chunk start in the merged transcript |
 | OnlyNotes-whz | `transcribeRaw` does not run `dedupeOverlap`; mic chunks overlap by 20 s on recordings > 12 min 20 s → possible repeated text |
-| OnlyNotes-nq8 | Chunked diarization (>= 24 MiB AAC or > 1399 s) silently skips failed chunks (log only) → transcript with gaps and no marker |
+| OnlyNotes-nq8 | Addressed in code, **pending Phase 5**: failed chunks are retried (5 attempts), then the track fails visibly (no partial tracks, DEC-008). Worst case about 1,610 s per request (5 × 300 s timeout + 110 s sleeps), independently per failed chunk. Whether offline failures fail fast or reach the 300 s timeout is unmeasured. Also covers empty-text responses (`{"text":""}` is now a zero-segment chunk, not a parse error) and an all-empty mic track (`transcribeRaw` throws, so the tag-0 marker shows); pending Phase 5 on the real 22:00:51 recording |
 | No task | Chunked diarization gives each chunk its own speaker tag range (stride 50) → same person gets different tags per chunk |
 | OnlyNotes-87j | `dedupeOverlap` removes duplicate text globally → short acknowledgements ("yeah") dropped (only affects the Whisper-service helpers; mic path does not call it today) |
-| OnlyNotes-uc3 | Mic path not stored; retranscribe uses system audio only → mic transcript and Speaker 1 lines lost on retranscribe |
-| OnlyNotes-8ru | Whisper chunk temp files use fixed names → concurrent runs can collide |
+| OnlyNotes-uc3 | Addressed in code, **pending Phase 5**: retranscribe derives and transcribes `<system>_mic.wav`. The path is still not persisted; recordings whose mic file was deleted (e.g. by the old ≤ 740 s cleanup, bd `mi5`) cannot be recovered |
+| OnlyNotes-8ru | Addressed in code (chunk files carry a per-job UUID), **pending Phase 5** |
 | OnlyNotes-zpv | No per-word timestamps → blocks precise text/timeline alignment |
 | OnlyNotes-cyy | Retranscribe resets `speakers` to `[:]` → renamed speakers lost |
 
@@ -44,6 +44,9 @@ One line each: symptom → impact. Details live in the bd task.
 |---|---|
 | OnlyNotes-kep | `NoteStore.loadAll` returns `[]` on decode failure and `save` then rewrites `notes.json` from that empty list → a corrupt/unreadable file is overwritten on the next save (from code reading; not reproduced) |
 | OnlyNotes-97z | `NoteStore.delete` removes only `audioFilePath` (system WAV) → `_mic.wav` stays on disk |
+| OnlyNotes-mi5 | Addressed in code, **pending Phase 5**: `transcribeRaw` deleted the source mic WAV after transcribing audio of 740 s or less (the source is its own single chunk). Verified 2026-11-04: 6 of 105 recordings have no `_mic.wav` (e.g. 2026-06-15, 06-17, 06-22 short calls); those files are gone for good |
+| OnlyNotes-59a | `NoteStore.save` swallows encode/write errors → a full disk loses a new transcript or a retranscribe result silently (from code reading, Codex review 2026-11-04) |
+| OnlyNotes-2b2 | Tag-0 "⚠️" marker segment counts as "Speaker 0" in the speaker list and rename UI |
 | OnlyNotes-6k0 | `@AppStorage` keeps OpenAI and Brave keys in `UserDefaults` → keys not in Keychain |
 | OnlyNotes-s69 | `assemblyAIKey` still declared in `AppState`, no UI or use → dead setting |
 

@@ -16,7 +16,23 @@ struct MeetingActionExecutor {
 
             let openAI = OpenAIService(apiKey: apiKey)
             let diarized = DiarizedTranscriptionService(apiKey: apiKey)
-            let segments = try await diarized.transcribe(audioURL: systemURL, speakerTagOffset: 2)
+            var segments = try await diarized.transcribe(audioURL: systemURL, speakerTagOffset: 2)
+
+            // Mic track: the recorder names it <system path minus extension>_mic.wav. Imported audio has none.
+            let micURL = URL(fileURLWithPath: systemURL.deletingPathExtension().path + "_mic.wav")
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
+               (attrs[.size] as? Int ?? 0) > 4096 {
+                print("MeetingActionExecutor: retranscribing mic track \(micURL.lastPathComponent)")
+                let micSegments: [TranscriptSegment]
+                do {
+                    let micResult = try await WhisperTranscriptionService(apiKey: apiKey).transcribeRaw(audioURL: micURL)
+                    micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
+                } catch {
+                    print("MeetingActionExecutor: mic retranscription failed (non-fatal): \(error.localizedDescription)")
+                    micSegments = [WhisperTranscriptionService.micFailureMarker(error: error, after: segments)]
+                }
+                segments = (segments + micSegments).sorted { $0.startTime < $1.startTime }
+            }
 
             updated.meetingAttachment?.segments = segments
             updated.meetingAttachment?.speakers = [:]

@@ -127,17 +127,22 @@ class AppState: ObservableObject {
             let whisper = WhisperTranscriptionService(apiKey: openAIKey)
             let systemSegments = try await diarized.transcribe(audioURL: result.systemURL, speakerTagOffset: 2)
 
-            // Mic track → speaker 1
+            // Mic track → speaker 1. Failure is non-fatal: keep the system transcript and add a visible marker.
             var micSegments: [TranscriptSegment] = []
+            var micWarning: String? = nil
             if let micURL = result.micURL,
                FileManager.default.fileExists(atPath: micURL.path),
                let attrs = try? FileManager.default.attributesOfItem(atPath: micURL.path),
                (attrs[.size] as? Int ?? 0) > 4096 {
+                print("AppState: transcribing mic track \(micURL.lastPathComponent)")
                 do {
                     let micResult = try await whisper.transcribeRaw(audioURL: micURL)
                     micSegments = micResult.map { var s = $0; s.speakerTag = 1; return s }
                 } catch {
-                    print("Mic transcription failed (non-fatal): \(error.localizedDescription)")
+                    print("AppState: mic transcription failed (non-fatal): \(error.localizedDescription)")
+                    let marker = WhisperTranscriptionService.micFailureMarker(error: error, after: systemSegments)
+                    micSegments = [marker]
+                    micWarning = marker.text
                 }
             }
 
@@ -161,9 +166,10 @@ class AppState: ObservableObject {
 
             NoteStore.shared.save(note)
 
+            let allWarnings = warnings + [micWarning].compactMap { $0 }
             await MainActor.run {
                 self.loadNotes()
-                if !warnings.isEmpty { self.processingError = warnings.joined(separator: " ") }
+                if !allWarnings.isEmpty { self.processingError = allWarnings.joined(separator: " ") }
                 self.isProcessing = false
                 onNoteSaved?(note)
             }

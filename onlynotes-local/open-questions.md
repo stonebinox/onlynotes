@@ -26,7 +26,7 @@
 | Did the cached converter (awy.1) remove the crackle and the mic-length shortfall? Needs a real recording. | `OnlyNotes-awy.1`, `OnlyNotes-1b2` |
 | Do PTS and the host clock agree closely enough to turn PTS padding on? Needs the 30 s diagnostic. | `OnlyNotes-awy.1` |
 | Should playback mix mic + system or play both? | `OnlyNotes-isf` |
-| Should the mic audio path be persisted for retranscribe/playback? | `OnlyNotes-uc3` |
+| Should the mic audio path be persisted for playback? (Retranscribe now derives it.) | `OnlyNotes-uc3`, `OnlyNotes-isf` |
 
 ## MeetCapture
 

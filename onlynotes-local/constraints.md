@@ -27,7 +27,7 @@
 |---|---|
 | Mic level ~15 dB below system audio | bd `OnlyNotes-rfn` |
 | Playback excludes the mic track | bd `OnlyNotes-isf` |
-| Mic path not persisted; retranscribe uses system audio only | bd `OnlyNotes-uc3` |
+| Mic path not persisted; retranscribe derives it as `<system path minus extension>_mic.wav` (works only while that file exists) | bd `OnlyNotes-uc3` |
 | Chunked (>= 24 MiB or > 1399 s) diarization has per-chunk speaker namespaces; no cross-chunk identity | [open-questions.md](open-questions.md) |
 | No action chaining in chat (one action per response) | `OnlyNotes-udn` |
 | API keys stored in `UserDefaults`, not Keychain | [known-issues.md](known-issues.md) |

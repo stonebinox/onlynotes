@@ -15,7 +15,7 @@ The first ScreenCaptureKit version (`acbcfb6`) mixed mic and system audio into o
 - Write two WAVs: system audio (remote participants) and mic (the local user).
 - Transcribe separately: system → diarized speakers with tags ≥ 2; mic → **Speaker 1**. Tag 1 is reserved for the mic everywhere.
 - Both tracks share one clock: each buffer's presentation timestamp is compared with a host-clock anchor captured before capture starts, and the drift is measured into the `_diag.json` sidecar. PTS silence padding is implemented but **off by default** (`ptsPaddingEnabled = false`) pending a ~30 s diagnostic recording that shows PTS and the host clock agree (OnlyNotes-awy.1). Segments are merged by `startTime`.
-- The note keeps only the system WAV path for playback and retranscribe.
+- The note keeps only the system WAV path for playback and retranscribe. (Since [DEC-008](DEC-008-no-partial-transcripts.md), retranscribe also derives the mic WAV from it as `<system path minus extension>_mic.wav`; the stored shape is unchanged.)
 
 ## Consequences
 

@@ -28,7 +28,7 @@ Real recordings gave incoherent transcripts. Root cause (bd `pn6`, confirmed by 
 
 **Negative:**
 - Unverified: coherence, label format, timestamp units, and whether a long single request hits the ~2000 output-token cap noted in pn6 ([open questions](../open-questions.md)).
-- Chunked path (> ~105 min) has no cross-chunk speaker identity and skips failed chunks silently.
+- Chunked path (> ~105 min) has no cross-chunk speaker identity and skips failed chunks silently. (Silent skipping superseded by [DEC-008](DEC-008-no-partial-transcripts.md): failed requests are retried, then the track fails visibly.)
 - Leaves unused code behind (`consolidateSpeakerTags`, `inferSpeakers`, `assemblyAIKey`).
 - Single point of failure on one vendor model.
 

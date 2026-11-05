@@ -33,7 +33,7 @@ The pn6 concern about a ~2000 output-token cap is therefore not a hard limit for
 - Recordings over about 23 min no longer fail with HTTP 400.
 
 **Negative:**
-- Recordings over 1399 s get per-chunk speaker namespaces (more speaker tags than real speakers) and the chunked path silently skips failed chunks (bd `OnlyNotes-nq8`).
+- Recordings over 1399 s get per-chunk speaker namespaces (more speaker tags than real speakers) and the chunked path silently skipped failed chunks (bd `OnlyNotes-nq8`; superseded by [DEC-008](DEC-008-no-partial-transcripts.md): retry, then fail the whole track visibly).
 - Based on synthetic audio; real-call chunked coverage is still to be verified.
 
 **Revisit when:** OpenAI changes the 1400 s limit or the model; the engine is replaced (bd `OnlyNotes-awy`); cross-chunk speaker identity is added.

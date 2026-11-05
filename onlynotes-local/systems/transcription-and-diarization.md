@@ -1,7 +1,7 @@
 # Transcription and Diarization
 
-**Status:** Current code path. **Unverified on a real recording** (bd `OnlyNotes-pn6`, `OnlyNotes-e3l`, both in progress).
-**Last verified:** 2026-10-28
+**Status:** Current code path. The nq8 retry / no-partial-track / mic-recovery change is **implemented, pending Phase 5 on real recordings**. **Unverified on a real recording** (bd `OnlyNotes-pn6`, `OnlyNotes-e3l`, both in progress).
+**Last verified:** 2026-11-04
 **Source:** `OnlyNotes/AppState.swift`, `OnlyNotes/Services/DiarizedTranscriptionService.swift`, `OnlyNotes/Services/WhisperTranscriptionService.swift`, `OnlyNotes/Services/MeetingActionExecutor.swift`, `OnlyNotes/Services/OpenAIService.swift`
 
 ## Live pipeline
@@ -12,17 +12,17 @@ Entry points, all using the same diarization call (`speakerTagOffset: 2`):
 |---|---|---|
 | Stop recording | `AppState.stopAndProcess` → `AppState.process` | System WAV (diarized) + mic WAV (raw) |
 | Import audio into a note | `AppState.importAudio` | One file, diarized; no mic track |
-| Chat action `retranscribe` | `MeetingActionExecutor.execute` | `audioFilePath` (system WAV) only; resets `speakers` to `[:]`; regenerates summary and title |
+| Chat action `retranscribe` | `MeetingActionExecutor.execute` | `audioFilePath` (system WAV) diarized, plus the mic sibling `<system path minus extension>_mic.wav` if it exists and is > 4096 bytes (transcribed like live processing, tag 1); resets `speakers` to `[:]`; regenerates summary and title. Imported audio has no mic sibling, so it stays system-only |
 
 ### Stop-and-process steps
 
 1. System WAV → `DiarizedTranscriptionService.transcribe(audioURL:speakerTagOffset: 2)`. A failure here fails the whole job (a note without transcript is saved and the error shown).
-2. Mic WAV, if it exists and is > 4096 bytes → `WhisperTranscriptionService.transcribeRaw`; every segment gets `speakerTag = 1`. A mic failure is logged and ignored.
+2. Mic WAV, if it exists and is > 4096 bytes → a log line, then `WhisperTranscriptionService.transcribeRaw`; every segment gets `speakerTag = 1`. A mic failure (after retries) is non-fatal: the system segments are kept, one tag-0 marker segment ("⚠️ Your microphone could not be transcribed (<error>). Your side of the conversation is missing. The audio is kept: use Retranscribe this meeting to try again.") is appended at the end, the same text is added to `processingError` (joined with any existing warnings), and the summary still runs. Missing or tiny mic files add no marker.
 3. `systemSegments + micSegments` sorted by `startTime`.
 4. `OpenAIService.summarize` (`gpt-4o`) with segments and live notes → title, summary, action items.
 5. Save `Note` + `MeetingAttachment`.
 
-Speaker tag convention: **1 = mic (the local user)**, **≥ 2 = system-audio speakers**, 0 = warning marker (Whisper partial-failure marker).
+Speaker tag convention: **1 = mic (the local user)**, **≥ 2 = system-audio speakers**, 0 = warning marker (mic-failure marker, `WhisperTranscriptionService.micFailureMarker`).
 
 ## `DiarizedTranscriptionService`
 
@@ -40,7 +40,8 @@ Speaker tag convention: **1 = mic (the local user)**, **≥ 2 = system-audio spe
 | Speaker tags | Labels mapped to ints in first-seen order starting at `speakerTagBase`; chunk *i* uses `speakerTagOffset + i × 50` (`speakerNamespaceStride`) |
 | Timestamps | `start`/`end` read as seconds; values ≥ 10000 are divided by 1000 (defensive; flagged in pn6); chunk start offset added; `end ≥ start + 0.01` |
 | Dropped segments | Empty text or missing `speaker` are dropped and counted in the log |
-| Failures | Single call: error propagates. Chunked: a failed chunk is logged and **skipped**; error only if all chunks fail |
+| Failures | Every request goes through the shared retry (below). Single call: error propagates. Chunked: the first chunk that still fails stops the loop and throws `transcriptionFailed` naming the chunk number/total, its mm:ss–mm:ss range and the final error; **no partial segments are returned** (DEC-008). `!allSegments.isEmpty` still guards the all-empty case |
+| Retry | `performTranscriptionRequest` (file scope in `DiarizedTranscriptionService.swift`, also used by the mic service): 5 attempts, sleeps 5/15/30/60 s (`Task.sleep`). Retries only URLError codes timedOut, networkConnectionLost, notConnectedToInternet, cannotConnectToHost, cannotFindHost, dnsLookupFailed, secureConnectionFailed and HTTP 408, 429, 500–599 (classified on the integer status). Cancellation and other 4xx/parse/export errors throw immediately. Each failed attempt logs `<label> attempt k/5 failed after <s>s: URLError <code>` or `HTTP <status>`. Budget: about 5 × 300 s timeout + 110 s ≈ 1,610 s per request, per chunk |
 
 Single-call is the intended case for recordings within both limits: one call → one consistent speaker namespace. Recordings over 1399 s are chunked even though their AAC is far below 24 MiB.
 
@@ -48,9 +49,11 @@ Single-call is the intended case for recordings within both limits: one call →
 
 Despite the class name, the live model is **`gpt-4o-mini-transcribe-2025-12-15`** (same `/v1/audio/transcriptions` endpoint, `response_format=json`). That model returns text without segment timestamps (bd `pn6`, `66z`, `bfe`), so the parser falls back to one segment per chunk (`startTime = chunk offset`, `endTime = offset + 0.01`).
 
-- Chunks: 720 s with 20 s overlap (`.m4a` via `AVAssetExportPresetAppleM4A`, files named `chunk_<start>.m4a` in the shared temp dir). Audio ≤ 740 s is sent whole.
-- On a chunk error it stops, keeps earlier chunks, and appends a tag-0 marker segment "⚠️ Chunk i/n failed… Saving partial transcript."
+- Chunks: 720 s with 20 s overlap (`.m4a` via `AVAssetExportPresetAppleM4A`, files named `chunk_<jobUUID>_<start>.m4a` in the temp dir, so concurrent jobs do not collide). Audio ≤ 740 s is sent whole (`splitAudio` returns the source URL).
+- Each chunk request uses the shared retry. If any chunk still fails, `transcribeRaw` throws; it never returns a partial track. A `defer` removes the chunk files but never the source URL (the earlier code deleted the mic WAV for audio ≤ 740 s, bd `mi5`); `splitAudio` cleans up already-exported chunks if an export throws.
 - `transcribeRaw` does **not** de-duplicate the 20 s overlaps.
+- Response handling: a `segments` array is mapped as before (an empty array gives zero segments). Otherwise a top-level `text` string is used: non-empty text becomes the one coarse segment, empty or whitespace-only text is a successful zero-segment parse (the chunk does not fail and is not retried). Only a response with neither `segments` nor `text` throws `parseError`. Measured: 11 s of synthetic near-silence sent to `gpt-4o-mini-transcribe-2025-12-15` with `response_format=json` returned HTTP 200 `{"text":"","usage":...}` (2 of 2 runs, 2026-11-04). The real 22:00:51 call lost its whole mic track with "No 'segments' key in response. Top-level keys: text, usage". "No speech" is confirmed only for synthetic silence, not for arbitrary empty responses.
+- If every chunk returns zero segments, `transcribeRaw` throws `transcriptionFailed("No transcript segments returned for any mic chunk")`, so the tag-0 microphone marker still appears instead of a silently empty mic track.
 
 ## Dead code still in the tree
 
